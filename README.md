@@ -1,11 +1,5 @@
 # clarity
 
-Questo approccio è eccellente e altamente innovativo.
-
-Ecco una sintesi dell'architettura e gli **step dettagliati per l'implementazione da zero** del tuo framework, che chiameremo provvisoriamente **"Signal-DOM"**.
-
------
-
 ## 1\. Architettura "Signal-DOM": Sintesi dell'Approccio
 
 L'approccio "Signal-DOM" si basa su tre pilastri per ottenere astrazione e reattività senza VDOM:
