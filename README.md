@@ -1,130 +1,158 @@
-# clarity
+# Clarity Framework
 
-## 1\. Architettura "Signal-DOM": Sintesi dell'Approccio
+**Clarity** is a lightweight, zero-boilerplate UI framework that delivers exceptional performance by compiling a simple functional DSL directly to tagged template literals and managing state via fine-grained Signals. **No Virtual DOM, only pure speed.**
 
-L'approccio "Signal-DOM" si basa su tre pilastri per ottenere astrazione e reattività senza VDOM:
+## 💡 Core Philosophy
 
-1.  **DSL (Domain-Specific Language) Astratto:** L'utente scrive i componenti utilizzando una sintassi a funzioni (Hyperscript/Metodi) invece di tag HTML.
-2.  **Trasformazione a Compilazione (TSC API):** Il **TypeScript Compiler API** intercetta e traduce il tuo DSL in Template Literals marcati (`html\`...\`\`) e inietta la logica dei segnali reattivi.
-3.  **Reattività a Segnali e Runtime Leggero:** Il runtime gestisce lo stato tramite i **Segnali** e utilizza i Template Literals per aggiornare in modo chirurgico solo i nodi DOM che dipendono da quel Segnale.
+Clarity achieves native-like performance by shifting the heavy lifting from the browser's runtime to the **build phase**.
 
-| Pilastro | Obiettivo | Vantaggio |
+| Feature | Mechanism | Benefit |
 | :--- | :--- | :--- |
-| **DSL / TSC API** | Astrazione della sintassi e iniezione della reattività. | Evita JSX e Babel, garantendo la sicurezza dei tipi. |
-| **Segnali** | Gestione dello stato e tracciamento delle dipendenze. | Eliminazione del VDOM e aggiornamento ultra-veloce. |
-| **Template Literals** | Base per la creazione del DOM e l'aggiornamento. | Sfrutta la velocità nativa di parsing del browser (una tantum). |
+| **Syntax** | Functional Hyperscript DSL (`div()`, `h1()`) | Pure functional composition, great TypeScript integration. |
+| **Compilation** | **TypeScript Compiler API (TSC Transformer)** | Translates DSL calls directly into optimized JavaScript and HTML. |
+| **Rendering** | Tagged Template Literals (`html\`...\`\`) | Fast initial DOM creation by leveraging native browser parsing. |
+| **Reactivity** | **Signals** | Surgical DOM updates (patching) without the need for VDOM diffing. |
 
 -----
 
-## 2\. Step di Implementazione Dettagliati
+## Getting Started
 
-Implementare questo sistema richiede due fasi principali: **Setup Iniziale** e **Sviluppo Core**.
+To start a new project using Clarity, you need Node.js, TypeScript, and a way to execute your custom compiler pipeline.
 
-### Fase 1: Setup Iniziale del Progetto (Framework)
+### Step 1: Project Setup
 
-#### Step 1: Inizializzazione del Progetto e Struttura
+Create your project directory and install necessary tools.
 
-Crea un progetto Node.js e configura TypeScript.
+```bash
+mkdir clarity-app && cd clarity-app
+npm init -y
+npm install typescript @types/node ts-node --save-dev
+# Install your core framework files (Signals, DSL, Runtime, etc.) 
+# These will be implemented in Step 4.
+```
 
-1.  Crea la cartella del progetto: `mkdir signal-dom-framework && cd signal-dom-framework`
-2.  Inizializza Node: `npm init -y`
-3.  Installa le dipendenze essenziali:
-    ```bash
-    npm install typescript @types/node ts-node --save-dev
-    ```
-4.  Crea il file di configurazione TypeScript:
-    ```bash
-    npx tsc --init
-    ```
-5.  Aggiungi un file `tsconfig.json` di base, assicurandoti che l'output sia moderno (es. `target: "es2020"`, `module: "commonjs"`).
+Create a `tsconfig.json` file:
 
-#### Step 2: La Libreria dei Segnali (Reattività)
+```bash
+npx tsc --init
+```
 
-Questa è la tua libreria leggera di gestione dello stato.
+### Step 2: Write the Core Code (Conceptual)
 
-1.  Crea un file, es. `src/signals.ts`.
+Your final project will require three main components:
 
-2.  Implementa la logica di base di `createSignal`, `createEffect` e `createMemo`.
+1.  **`src/signals.ts`**: The reactivity engine (`createSignal`, `createEffect`).
+2.  **`src/dsl.ts`**: The functional tag definitions (`div`, `h1`).
+3.  **`src/transformer.ts`**: The core logic that converts `div(...)` calls into `html\`...\`\` strings.
 
-    **Esempio minimale di API dei Segnali:**
+### Step 3: Configure the Build Command
 
-    ```typescript
-    // src/signals.ts
-    // 💡 Il cuore della reattività: ogni signal notifica i suoi observers (effects)
-    export function createSignal<T>(value: T): [() => T, (newValue: T) => void] {
-      let current = value;
-      const observers = new Set<() => void>();
-      const read = () => {
-        // ⚠️ Qui va la logica per tracciare chi sta leggendo (attuale "effect")
-        return current;
-      };
-      const write = (newValue: T) => {
-        if (current !== newValue) {
-          current = newValue;
-          observers.forEach(effect => effect()); // Notifica gli osservatori
-        }
-      };
-      return [read, write];
-    }
-    // createEffect, createMemo, e la gestione del 'context' di tracciamento sono da implementare
-    ```
+Since Clarity requires a custom build step (the TSC Transformer), you'll use a Node script to run the compilation:
 
-### Fase 2: Sviluppo del Core (TSC API e Runtime)
+```json
+// package.json snippet
+"scripts": {
+  "build": "node scripts/run-compiler.js",
+  "start": "npm run build && node dist/index.js" 
+}
+```
 
-#### Step 3: Implementazione del TSC Transformer (La Parte Complessa)
+*(The `run-compiler.js` script will execute the TSC API and inject your custom transformer.)*
 
-Questo è il tuo "compilatore" personalizzato che trasforma il tuo DSL in Template Literals reattivi.
+-----
 
-1.  Crea la tua API DSL (Hyperscript), ad esempio in `src/dsl.ts`:
+## 🎨 Clarity DSL: The Functional Syntax
 
-    ```typescript
-    // src/dsl.ts
-    // Queste sono solo funzioni vuote, saranno sostituite dal transformer
-    export const div = (props: object, ...children: any) => {};
-    export const h1 = (props: object, ...children: any) => {};
-    // ... altri tag HTML
-    ```
+Clarity uses a powerful functional syntax that offers maximum clarity and eliminates the need for empty props objects (`{}`) when not required.
 
-2.  Crea il file del tuo Transformer, es. `src/transformer.ts`.
+### Syntax Rule: Props are Optional
 
-      * Utilizza le API di `typescript.createSourceFile`, `typescript.visitNode`, e `typescript.createPrinter` per:
-          * **Identificare le chiamate al tuo DSL:** Cerca `div(...)`, `h1(...)`.
-          * **Trasformazione:** Sostituisci l'intera chiamata con la creazione di un **Template Literal Marcato** (`html\`...\`` ). Le espressioni dinamiche (come le letture di Segnali:  `count()`) devono essere inserite come interpolazioni (`${...}\`) all'interno del Template Literal.
+A tag function accepts arguments based on type:
 
-#### Step 4: Sviluppo del Runtime del Template Literal
+| Case | Syntax | Interpretation by Compiler |
+| :--- | :--- | :--- |
+| **Props and Children** | `div({ id: 'main' }, h1('Title'))` | First argument is **Props**. |
+| **Only Children** | `div(h1('Title'), p('Text'))` | First argument is a **Child**. Props are implicitly `{}`. |
+| **Only Props** | `div({ onclick: handler })` | Props are present, children are absent. |
 
-Questa è la parte che gestisce l'output del transformer.
+### Example Component: `Counter.ts`
 
-1.  Crea un file, es. `src/runtime.ts`.
+This demonstrates the clean composition and use of Signals.
 
-2.  Implementa la funzione `html` che "tagga" le template stringhe.
+```typescript
+import { createSignal } from '../core/signals'; 
+import { div, button, p } from '../core/dsl'; // Your compiled tag functions
 
-      * **Inizializzazione:** La prima volta che la funzione `html` viene chiamata, deve:
-        a. Creare un `<template>` in memoria.
-        b. Identificare dove si trovano gli *slot* dinamici (`${...}`) e contrassegnarli con dei nodi segnaposto (es. nodi di commento).
-        c. Creare il DOM iniziale (clonando il contenuto del `<template>`).
-      * **Patching Reattivo:** Implementa la logica di **`createEffect`** che si attiva quando i segnali cambiano. Quando un segnale (es. `count`) cambia, l'effetto deve trovare il nodo segnaposto associato e aggiornare direttamente la sua proprietà (`textContent` o un attributo).
+export const Counter = () => {
+  const [count, setCount] = createSignal(0);
 
-#### Step 5: Test e Utilizzo
+  const increment = () => setCount(count() + 1);
 
-1.  Crea un file di test per l'utente, es. `example/main.ts`.
+  // Functional component composition: clear separation of concerns
+  return div(
+    { class: 'counter-widget' }, // Props
+    p({}, `Current count: ${count()}`), // Child 1: Reads signal
+    button(
+      { onclick: increment }, // Child 2: Triggers update
+      'Click to Increment' 
+    )
+  );
+};
+```
 
-    ```typescript
-    // example/main.ts
-    import { div, h1 } from '../src/dsl';
-    import { createSignal } from '../src/signals';
-    import { render } from '../src/runtime';
+### Example Component: Props with Default Values
 
-    const [count, setCount] = createSignal(0);
+Props can be defined as optional in the interface, and assigned a default value inside the functional component using standard JavaScript destructuring.
 
-    const App = div({}, [
-      h1({}, `Contatore: ${count()}`), // Uso del tuo DSL con il segnale
-      div({ onclick: () => setCount(count() + 1) }, 'Incrementa')
-    ]);
+```typescript
+// Component: Title.ts
+interface TitleProps {
+  text: string;
+  level?: 1 | 2; // Optional prop
+}
 
-    render(App, document.getElementById('app'));
-    ```
+const Title = (props: TitleProps) => {
+  // 💡 Assigns default value if props.level is undefined
+  const { text, level = 1 } = props; 
 
-2.  Esegui il Transformer sul codice utente, poi esegui l'output JavaScript nel browser.
+  if (level === 1) {
+    return h1({}, text);
+  }
+  // ... else return h2, etc.
+  return div({}, text); 
+};
+```
 
-Questo percorso (DSL $\rightarrow$ TSC API $\rightarrow$ Template Literals + Segnali) ti dà il pieno controllo e l'indipendenza che cercavi. Sarà un lavoro complesso, ma il risultato sarà un sistema di rendering veramente unico e performante.
+-----
+
+## 🧠 Advanced Concepts: TypeScript Generics
+
+Clarity strongly encourages the use of TypeScript Generics for **type safety**, especially when defining custom components and signals.
+
+### 1\. Custom Component Type Safety
+
+Use Generics to ensure consumers of your component pass the correct properties. The TSC removes these in the build, but they are crucial for developer experience.
+
+```typescript
+// Define your Props interface
+interface ListProps<T> {
+  items: T[]; // The list can handle any type T
+}
+
+// The custom component uses the Generic
+export function ItemList<T>(props: ListProps<T>) {
+  // ... Component logic using props.items
+  return div({}, 'List rendered'); 
+}
+```
+
+### 2\. Signal Type Safety
+
+Generics are used to strictly type the data held by your reactive signals.
+
+```typescript
+// Ensures 'user' can only hold an object of type UserProfile or null
+const [user, setUser] = createSignal<UserProfile | null>(null); 
+```
+
+The TSC Transformer relies on the clarity of this functional structure to perform the most critical step: generating the optimized Template Literal code.
