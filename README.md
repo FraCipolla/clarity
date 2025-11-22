@@ -1,14 +1,3 @@
-Absolutely — here is a clean, structured, deeply detailed README that explains:
-
-✔ how your reactivity system works
-✔ how your DOM builder works
-✔ why we needed deep changes
-✔ how your compiler/preprocessor transforms code
-✔ how developers should write components
-✔ examples, limitations, philosophy, and future improvements
-
-This is the README you can put directly into your repo.
-
 Clarity: A Minimal Reactive UI Framework
 
 Clarity is a tiny, compiler-driven reactive UI library inspired by SolidJS and Svelte.
