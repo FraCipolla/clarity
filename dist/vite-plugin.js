@@ -11,8 +11,6 @@ export default function ClarityPlugin() {
             if (id.includes('node_modules'))
                 return null;
             const transformed = preprocessCode(code);
-            // Debug: log & save preprocessed file
-            console.log('Preprocessing:', id);
             const outDir = path.resolve('./.preprocessed');
             if (!fs.existsSync(outDir))
                 fs.mkdirSync(outDir);
