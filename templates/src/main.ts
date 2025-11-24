@@ -1,5 +1,4 @@
-import { reactive, effect, div, p, button } from "clarity";
-import ClarityPlugin from "clarity/vite-plugin";
+import { reactive, effect, div, p, button } from "@fracipolla/clarity";
 
 // Example reactive variable
 reactive count = 0;
@@ -8,10 +7,10 @@ reactive count = 0;
 const page = div(
   {},
   p(`Count: ${count}`),
-  button({ onclick: () => count.value++ }, "Increment")
+  button({ onclick: () => count++ }, "Increment")
 );
 
 document.body.appendChild(page);
 
 // Logging effect
-effect(() => console.log("Count updated:", count.value));
+effect(() => console.log("Count updated:", count));

@@ -1,8 +1,8 @@
-import { preprocessCode } from './preprocess/index.js';
 import fs from 'fs';
 import path from 'path';
+import { preprocessCode } from './preprocess/index.js';
 export default function ClarityPlugin() {
-    return {
+    const plugin = {
         name: 'vite-plugin-clarity',
         enforce: 'pre',
         transform(code, id) {
@@ -11,7 +11,8 @@ export default function ClarityPlugin() {
             if (id.includes('node_modules'))
                 return null;
             const transformed = preprocessCode(code);
-            // ---- Debug: save preprocessed file ----
+            // Debug: log & save preprocessed file
+            console.log('Preprocessing:', id);
             const outDir = path.resolve('./.preprocessed');
             if (!fs.existsSync(outDir))
                 fs.mkdirSync(outDir);
@@ -23,5 +24,6 @@ export default function ClarityPlugin() {
             };
         }
     };
+    return plugin;
 }
 //# sourceMappingURL=vite-plugin.js.map
