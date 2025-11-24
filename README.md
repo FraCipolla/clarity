@@ -446,19 +446,3 @@ Clarity is now a:
 UI micro-framework.
 
 You now have reactive primitives, reactive objects, auto-updating attributes, auto-updating text nodes, and a solid reactivity engine comparable to SolidJS (but smaller).
-
-If you'd like, I can also generate:
-
-project logo
-
-documentation website
-
-examples folder
-
-unit tests
-
-benchmark page
-
-standalone playground
-
-Just tell me!
