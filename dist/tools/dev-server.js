@@ -1,0 +1,14 @@
+// src/tools/dev-server.ts
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+// __dirname per ESM/TypeScript
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const app = express();
+// Serve il playground
+app.use("/", express.static(path.resolve(__dirname, "../../dist")));
+app.listen(3000, () => {
+    console.log("Dev server running at http://localhost:3000");
+});
+//# sourceMappingURL=dev-server.js.map

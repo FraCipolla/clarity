@@ -1,0 +1,21 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+      "outDir": "./dist",
+      "rootDir": ".preprocessed",
+      "sourceMap": true,
+      "module": "NodeNext",
+      "moduleResolution": "NodeNext",
+      "declaration": true,
+      "declarationMap": true,
+    },
+    "include": [
+      ".preprocessed/**/*",
+    ],
+    "exclude": [
+      "dist",
+      "compiler",
+      "node_modules"
+    ]
+  }
+  

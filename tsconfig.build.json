@@ -1,0 +1,21 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+      "outDir": "dist",
+      "rootDir": ".preprocessed",
+      "declaration": true,
+      "declarationMap": true,
+      "sourceMap": false,
+      "allowJs": true,
+      "isolatedModules": false,
+      "moduleResolution": "NodeNext",
+      "strict": true,
+      "target": "ES2015",
+      "esModuleInterop": true,
+      "allowSyntheticDefaultImports": true,
+    },
+    "include": [
+      ".preprocessed/**/*",
+    ]
+  }
+  

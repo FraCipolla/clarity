@@ -1,0 +1,28 @@
+{
+  "name": "clarity",
+  "version": "0.1.0",
+  "description": "",
+  "main": "dist/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "concurrently \"tsc -p tsconfig.dev.json --watch\" \"node dist/tools/dev-server.js\"",
+    "build": "node src/scripts/preprocess.js && cp -r src/runtime .preprocessed/ && cp -r playground/tools .preprocessed/ && tsc --project tsconfig.build.json --outDir dist --rootDir .preprocessed && cp playground/index.html dist/"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.1",
+    "concurrently": "^8.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^3.0.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ts-morph": "^27.0.2",
+    "ws": "^8.18.3"
+  }
+}
