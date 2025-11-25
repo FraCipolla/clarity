@@ -1,6 +1,6 @@
 {
   "name": "@fracipolla/clarity",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A minimal reactive UI framework with compiler-driven syntax",
   "type": "module",
   "main": "dist/index.js",
@@ -27,12 +27,13 @@
   "author": "Matteo Cipolla",
   "license": "MIT",
   "exports": {
-    "./ts-plugin": {
-      "import": "./ts-plugin/index.js"
-    },
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./ts-plugin": {
+      "import": "./dist/ts-plugin/index.js",
+      "types": "./dist/ts-plugin/index.d.ts"
     },
     "./runtime": {
       "import": "./dist/runtime/index.js",
