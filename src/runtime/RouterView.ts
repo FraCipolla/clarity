@@ -1,5 +1,9 @@
 import { reactive, effect } from "./reactive.js";
-import { routes } from "./generated-routes";
+
+let routes: Record<string, any> = {};
+try {
+  routes = require("../generated-routes").routes;
+} catch {}
 
 export const currentRoute = reactive(window.location.hash || "#/");
 
