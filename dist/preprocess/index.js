@@ -93,6 +93,13 @@ export function preprocessCode(code) {
             let parent = node.getParent();
             let inTemplate = false;
             while (parent) {
+                if (parent.getKind() === SyntaxKind.CallExpression) {
+                    const callExpr = parent.asKindOrThrow(SyntaxKind.CallExpression);
+                    const funcName = callExpr.getExpression().getText();
+                    if (skipUnwrapCalls.has(funcName))
+                        return;
+                }
+                ;
                 if (parent.getKind() === SyntaxKind.TemplateExpression) {
                     inTemplate = true;
                     break;

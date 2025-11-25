@@ -2,18 +2,49 @@ import type { Plugin } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { preprocessCode } from './preprocess/index.js';
+import { scanRoutes } from "./preprocess/routing.js";
 
 export interface ClarityPluginOptions {
   debug?: boolean;
   extensions?: string[];
+  routesDir?: string; // optional custom routes folder
 }
 
 export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugin {
-  const { debug = false, extensions = ['.cl.ts', '.cl.js'] } = options;
+  const { debug = false, extensions = ['.cl.ts', '.cl.js'], routesDir = './src/routes' } = options;
+
+  // Virtual module id
+  const virtualModuleId = 'virtual:generated-routes';
+  const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
   return {
     name: 'vite-plugin-clarity',
     enforce: 'pre',
+
+    resolveId(id: string) {
+      if (id === virtualModuleId) return resolvedVirtualModuleId;
+      return null;
+    },
+
+    async load(id: string) {
+      if (id === resolvedVirtualModuleId) {
+        const routesMap = scanRoutes(routesDir);
+      
+        // generate JS code for the route map
+        const code = `
+          export const routes = {
+            ${Object.entries(routesMap).map(([route, info]) => {
+              const layoutsArray = (info.noLayout ? [] : info.layouts).map(
+                l => `() => import('${l}')`
+              );
+              return `'${route}': { page: () => import('${info.page}'), layouts: [${layoutsArray.join(', ')}], noLayout: ${info.noLayout || false} }`;
+            }).join(',\n')}
+          };
+        `;
+        return code;
+      }
+      return null;
+    },
 
     async transform(code: string, id: string) {
       const ext = path.extname(id);
@@ -33,6 +64,15 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
         code: transformed,
         map: null
       };
+    },
+
+    handleHotUpdate({ file, server }) {
+      if (file.startsWith(path.resolve(routesDir))) {
+        const mod = server.moduleGraph.getModuleById(resolvedVirtualModuleId);
+        if (mod) {
+          server.moduleGraph.invalidateModule(mod);
+        }
+      }
     }
   };
 }
