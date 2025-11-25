@@ -2,7 +2,7 @@ import type { Plugin } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { preprocessCode } from './preprocess/index.js';
-import { scanRoutes } from "./preprocess/routing.js";
+import { buildGeneratedRoutes } from "./preprocess/build-routes.js";
 
 export interface ClarityPluginOptions {
   debug?: boolean;
@@ -26,26 +26,6 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
       return null;
     },
 
-    async load(id: string) {
-      if (id === resolvedVirtualModuleId) {
-        const routesMap = scanRoutes(routesDir);
-      
-        // generate JS code for the route map
-        const code = `
-          export const routes = {
-            ${Object.entries(routesMap).map(([route, info]) => {
-              const layoutsArray = (info.noLayout ? [] : info.layouts).map(
-                l => `() => import('${l}')`
-              );
-              return `'${route}': { page: () => import('${info.page}'), layouts: [${layoutsArray.join(', ')}], noLayout: ${info.noLayout || false} }`;
-            }).join(',\n')}
-          };
-        `;
-        return code;
-      }
-      return null;
-    },
-
     async transform(code: string, id: string) {
       const ext = path.extname(id);
       if (!extensions.includes(ext) && !id.endsWith('.ts') && !id.endsWith('.js')) return null;
@@ -60,19 +40,13 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
         fs.writeFileSync(path.join(outDir, fileName), transformed, 'utf-8');
       }
 
+      const appDir = process.cwd();
+      buildGeneratedRoutes(appDir);
+
       return {
         code: transformed,
         map: null
       };
     },
-
-    handleHotUpdate({ file, server }) {
-      if (file.startsWith(path.resolve(routesDir))) {
-        const mod = server.moduleGraph.getModuleById(resolvedVirtualModuleId);
-        if (mod) {
-          server.moduleGraph.invalidateModule(mod);
-        }
-      }
-    }
   };
 }
