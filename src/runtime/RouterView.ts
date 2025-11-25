@@ -1,5 +1,5 @@
+// src/runtime/RouterView.ts
 import { reactive, effect } from "./reactive.js";
-import { routes } from "./generated-routes";
 
 export const currentRoute = reactive(window.location.hash || "#/");
 
@@ -7,7 +7,9 @@ window.addEventListener("hashchange", () => {
   currentRoute.value = window.location.hash || "#/";
 });
 
-export function RouterView() {
+export function RouterView(
+  routes: Record<string, () => Promise<{ default: HTMLElement }>>
+) {
   const container = document.createElement("div");
 
   effect(async () => {
@@ -18,13 +20,7 @@ export function RouterView() {
       return;
     }
 
-    let node = (await routeEntry.page()).default();
-
-    for (const layoutFnImport of routeEntry.layouts) {
-      const layoutModule = await layoutFnImport();
-      node = layoutModule.default(node);
-    }
-
+    const node = (await routeEntry()).default;
     container.appendChild(node);
   });
 

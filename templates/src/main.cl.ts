@@ -1,5 +1,8 @@
 // src/main.cl.ts
 import { RouterView } from "@fracipolla/clarity";
-import { routes } from "./generated-routes";
-// Attach the router view to the document body
-document.body.appendChild(RouterView());
+
+// ROUTES_START
+export const routes = {};
+// ROUTES_END
+
+document.body.appendChild(RouterView(routes));

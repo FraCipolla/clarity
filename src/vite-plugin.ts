@@ -3,7 +3,7 @@ import type { Plugin } from "vite";
 import path from "path";
 import fs from "fs";
 import { preprocessCode } from "./preprocess/index.js";
-import { buildGeneratedRoutes } from "./preprocess/build-routes.js";
+import { processRoutes } from "./preprocess/preprocess-routes.js";
 
 export interface ClarityPluginOptions {
   debug?: boolean;
@@ -17,19 +17,9 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
     name: "vite-plugin-clarity",
     enforce: "pre",
 
-    // --------------------------
-    // Build routes before Vite starts
-    // --------------------------
-    async configResolved(config) {
-      const appDir = config.root || process.cwd();
-      const routesFile = path.join(appDir, "src/generated-routes.ts");
-
-      // Build routes
-      buildGeneratedRoutes(appDir);
-
-      if (debug) {
-        console.log("[Clarity] Routes generated at:", routesFile);
-      }
+     async buildStart() {
+      const appDir = process.cwd();
+      processRoutes(appDir);
     },
 
     // --------------------------

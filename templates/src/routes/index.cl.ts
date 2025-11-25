@@ -1,7 +1,9 @@
-export const noLayout = true;
+import {reactive} from '@fracipolla/clarity/runtime'
+import {div, p, button} from '@fracipolla/clarity'
 
-export default function rootPage() {
-  const el = document.createElement("h1");
-  el.textContent = "root";
-  return el;
-}
+reactive count = 0;
+
+return div({},
+  p(`Count: ${count}`),
+  button({ onclick: () => count++ }, "Increment")
+)
