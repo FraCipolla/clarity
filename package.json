@@ -27,6 +27,9 @@
   "author": "Matteo Cipolla",
   "license": "MIT",
   "exports": {
+      "./ts-plugin": {
+      "import": "./ts-plugin/index.js"
+    },
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
