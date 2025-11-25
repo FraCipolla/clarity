@@ -3,16 +3,38 @@ import fs from "fs";
 import path from "path";
 
 /**
- * Wraps page code in default export if it doesn't already export default
+ * Wraps page code in default export if it doesn't already export default,
+ * preserving top-level imports and your `return div(...)` syntax.
  */
 function wrapPageIfNeeded(filePath: string) {
   let content = fs.readFileSync(filePath, "utf-8");
 
-  if (!/export\s+default/.test(content)) {
-    // Wrap user code in a default-exporting IIFE
-    content = `export default (() => {\n${content}\n})();\n`;
-    fs.writeFileSync(filePath, content, "utf-8");
+  if (/export\s+default/.test(content)) return;
+
+  // Split top-level imports from the rest
+  const lines = content.split("\n");
+  const importLines: string[] = [];
+  const restLines: string[] = [];
+
+  let foundNonImport = false;
+  for (const line of lines) {
+    if (!foundNonImport && line.trim().startsWith("import ")) {
+      importLines.push(line);
+    } else {
+      foundNonImport = true;
+      restLines.push(line);
+    }
   }
+
+  // Wrap the remaining code in an IIFE
+  content = [
+    ...importLines,
+    "export default (() => {",
+    ...restLines,
+    "})();"
+  ].join("\n");
+
+  fs.writeFileSync(filePath, content, "utf-8");
 }
 
 /**
