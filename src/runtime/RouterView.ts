@@ -7,15 +7,16 @@ export interface RouteEntry {
   noLayout?: boolean;
 }
 
-export const currentRoute = reactive(window.location.hash || "#/");
+export const currentRoute = reactive(window.location.pathname || "#/");
 
 window.addEventListener("hashchange", () => {
-  currentRoute.value = window.location.hash || "#/";
+  console.log("HASH CHANGED!", window.location.pathname);
+  currentRoute.value = window.location.pathname || "#/";
 });
 
 export function RouterView(routes: Record<string, RouteEntry>) {
-  console.log(routes)
   const container = document.createElement("div");
+
   async function runRoute() {
     console.log(currentRoute.value);
     container.innerHTML = "";

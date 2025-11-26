@@ -34,7 +34,7 @@ export function processRoutes(appDir: string) {
   let mainContent = fs.readFileSync(mainFile, "utf-8");
   mainContent = mainContent.replace(
     /\/\/ ROUTES_START[\s\S]*?\/\/ ROUTES_END/,
-    `// ROUTES_START\nexport const routes = {\n${routesStr}\n};\n// ROUTES_END`
+    `// ROUTES_START\nexport const routes: Record<string, RouteEntry> = {\n${routesStr}\n};\n// ROUTES_END`
   );
 
   fs.writeFileSync(mainFile, mainContent, "utf-8");
