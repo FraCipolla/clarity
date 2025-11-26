@@ -1,24 +1,22 @@
-// src/runtime/RouterView.ts
+// RouterView.ts
 import { reactive, effect } from "./reactive.js";
 
 export interface RouteEntry {
-  page: () => Promise<{ default: HTMLElement }>;                 // pages
-  layouts?: Array<() => Promise<{ default: (child: HTMLElement) => HTMLElement }>>; // layouts
+  page: () => Promise<{ default: HTMLElement }>;
+  layouts?: Array<() => Promise<{ default: (child: HTMLElement) => HTMLElement }>>;
   noLayout?: boolean;
 }
 
-export const currentRoute = reactive(window.location.pathname || "#/");
+export const currentRoute = reactive(window.location.pathname);
 
-window.addEventListener("hashchange", () => {
-  console.log("HASH CHANGED!", window.location.pathname);
-  currentRoute.value = window.location.pathname || "#/";
+window.addEventListener("popstate", () => {
+  currentRoute.value = window.location.pathname;
 });
 
 export function RouterView(routes: Record<string, RouteEntry>) {
   const container = document.createElement("div");
 
   async function runRoute() {
-    console.log(currentRoute.value);
     container.innerHTML = "";
 
     const routeEntry = routes[currentRoute.value];
@@ -38,8 +36,31 @@ export function RouterView(routes: Record<string, RouteEntry>) {
 
     container.appendChild(node);
   }
-  effect(() => runRoute());
+
+  effect(() => { runRoute(); });
 
   return container;
 }
 
+export function go(path: string) {
+  history.pushState(null, "", path);
+  currentRoute.value = path;
+}
+
+function initLinkInterceptor() {
+  document.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const link = target.closest("a");
+    if (!link) return;
+
+    const href = link.getAttribute("href");
+    if (!href) return;
+
+    if (href.startsWith("http") || href.startsWith("#")) return;
+
+    event.preventDefault();
+    go(href);
+  });
+}
+
+initLinkInterceptor();
