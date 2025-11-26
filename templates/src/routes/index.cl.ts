@@ -3,7 +3,7 @@ import {div, p, button} from '@fracipolla/clarity'
 
 reactive count = 0;
 
-return div({},
+export default div({},
   p(`Count: ${count}`),
   button({ onclick: () => count++ }, "Increment")
-)
+);

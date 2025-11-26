@@ -2,44 +2,6 @@
 import fs from "fs";
 import path from "path";
 
-/**
- * Wraps page code in default export if it doesn't already export default,
- * preserving top-level imports and your `return div(...)` syntax.
- */
-function wrapPageIfNeeded(filePath: string) {
-  let content = fs.readFileSync(filePath, "utf-8");
-
-  if (/export\s+default/.test(content)) return;
-
-  // Split top-level imports from the rest
-  const lines = content.split("\n");
-  const importLines: string[] = [];
-  const restLines: string[] = [];
-
-  let foundNonImport = false;
-  for (const line of lines) {
-    if (!foundNonImport && line.trim().startsWith("import ")) {
-      importLines.push(line);
-    } else {
-      foundNonImport = true;
-      restLines.push(line);
-    }
-  }
-
-  // Wrap the remaining code in an IIFE
-  content = [
-    ...importLines,
-    "export default (() => {",
-    ...restLines,
-    "})();"
-  ].join("\n");
-
-  fs.writeFileSync(filePath, content, "utf-8");
-}
-
-/**
- * Scans routes folder and builds a route map
- */
 function getRouteEntries(routesDir: string) {
   if (!fs.existsSync(routesDir)) return [];
 
@@ -63,7 +25,7 @@ export function processRoutes(appDir: string) {
 
   // Wrap pages
   const entries = getRouteEntries(routesDir);
-  entries.forEach(e => wrapPageIfNeeded(path.join(routesDir, path.basename(e.file))));
+  // entries.forEach(e => wrapPageIfNeeded(path.join(routesDir, path.basename(e.file))));
 
   // Build routes object as string
   const routesStr = entries.map(e => `  "${e.route}": () => import("${e.file}")`).join(",\n");

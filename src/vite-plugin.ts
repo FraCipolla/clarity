@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { preprocessCode } from "./preprocess/index.js";
 import { processRoutes } from "./preprocess/preprocess-routes.js";
+import { isHtmlTag } from "./runtime/dom.js";
 
 export interface ClarityPluginOptions {
   debug?: boolean;
@@ -17,14 +18,11 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
     name: "vite-plugin-clarity",
     enforce: "pre",
 
-     async buildStart() {
+    async buildStart() {
       const appDir = process.cwd();
       processRoutes(appDir);
     },
 
-    // --------------------------
-    // Transform Clarity files
-    // --------------------------
     async transform(code: string, id: string) {
       const ext = path.extname(id);
       if (!extensions.includes(ext) && !id.endsWith(".ts") && !id.endsWith(".js")) return null;

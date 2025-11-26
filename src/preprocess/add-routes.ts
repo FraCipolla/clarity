@@ -12,7 +12,7 @@ export function addRoutesToMain(appDir: string) {
 
   const routesEntries = files.map(f => {
     const route = f === "index.cl.ts" ? "/" : "/" + f.replace(".cl.ts", "");
-    return `  "${route}": () => import("./routes/${f}")`;
+    return `  "${route}": () => import("./routes/${f.replace(".cl.ts", ".cl")}")`;
   });
 
   let content = fs.readFileSync(mainFile, "utf-8");
