@@ -9,7 +9,7 @@ export interface RouteEntry {
 
 interface PageModule {
   default: HTMLElement;
-  layout?: boolean;
+  layout?: boolean | Array<() => Promise<{ default: (child: HTMLElement) => HTMLElement }>>;
 }
 
 export const currentRoute = reactive(window.location.pathname);
@@ -38,15 +38,24 @@ export function RouterView(routes: Record<string, RouteEntry>) {
 
     let node = pageModule.default;
 
-    // Apply layouts if any
-    if (!routeEntry.noLayout && routeEntry.layouts) {
-      for (const layoutImport of routeEntry.layouts) {
-        const layoutModule = await layoutImport();
-        node = layoutModule.default(node);
-      }
+    let layoutsToApply: Array<() => Promise<{ default: (child: HTMLElement) => HTMLElement }>> = [];
+
+    if (pageModule.layout === false) {
+      layoutsToApply = [];
+      routeEntry.noLayout = true;
+    } else if (Array.isArray(pageModule.layout)) {
+      layoutsToApply = pageModule.layout;
+    } else if (routeEntry.layouts) {
+      layoutsToApply = routeEntry.layouts;
+    }
+  
+    for (const layoutImport of layoutsToApply) {
+      const layoutModule = await layoutImport();
+      node = layoutModule.default(node);
     }
 
     container.appendChild(node);
+
   }
 
   effect(() => { runRoute(); });

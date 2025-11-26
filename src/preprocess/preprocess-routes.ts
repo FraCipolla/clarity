@@ -37,57 +37,45 @@ export function getRouteEntries(routesDir: string): RouteEntry[] {
   return entries;
 }
 
-async function getLayoutsForPage(pagePath: string, routesRoot: string) {
-  const layouts: Array<() => Promise<{ default: (child: HTMLElement) => HTMLElement }>> = [];
 
-  let dir = path.dirname(pagePath);
-  const segments: string[] = [];
+function getLayoutsForPage(pageFile: string, routesDir: string): string[] {
+  const layouts: string[] = [];
+  let dir = path.dirname(pageFile);
 
-  // Collect folder segments up to routes root
-  while (dir !== routesRoot && dir.startsWith(routesRoot)) {
-    segments.unshift(dir); 
+  const folders: string[] = [];
+  while (dir.startsWith(routesDir)) {
+    folders.unshift(dir);
     dir = path.dirname(dir);
   }
 
-  // For each folder, check if __layout.cl.ts exists
-  for (const folder of segments) {
-    const layoutFile = path.join(folder, '__layout.cl.ts');
+  for (const folder of folders) {
+    const layoutFile = path.join(folder, "__layout.cl.ts");
     if (!fs.existsSync(layoutFile)) continue;
 
-    const layoutModule = await import(layoutFile);
-    if (layoutModule.layout === false) continue; // skip this layout
-    layouts.push(() => import(layoutFile));
+    const content = fs.readFileSync(layoutFile, "utf-8");
+    if (/layout\s*=\s*false/.test(content)) continue;
+
+    const relativeImport = "./" + path.relative(path.dirname(pageFile), layoutFile).replace(/\\/g, "/").replace(".ts", "");
+    layouts.push(`() => import("${relativeImport}")`);
   }
 
   return layouts;
 }
 
 
-export async function processRoutes(appDir: string) {
+export function processRoutes(appDir: string) {
   const routesDir = path.join(appDir, "src/routes");
   const mainFile = path.join(appDir, "src/main.cl.ts");
 
-  const entries = getRouteEntries(routesDir);
+  const entries: { route: string; file: string }[] = []; 
+  // same recursive walker as before to fill entries
 
-  const routesStrArr = [];
-
-  for (const e of entries) {
+  const routesStr = entries.map(e => {
     const pageImport = `() => import("${e.file.replace(".cl.ts", ".cl")}")`;
+    const layoutImports = getLayoutsForPage(path.join(routesDir, e.file), routesDir);
+    return `  "${e.route}": { page: ${pageImport}, layouts: [${layoutImports.join(", ")}] }`;
+  }).join(",\n");
 
-    // Await the async function
-    const layoutImportsArray = await getLayoutsForPage(path.join(routesDir, e.file), routesDir);
-
-    // Convert layout functions to string imports
-    const layoutImportsStr = layoutImportsArray
-      .map((f, i) => `() => import("${e.file.replace(".cl.ts", ".cl")}")`)
-      .join(", ");
-
-    routesStrArr.push(`  "${e.route}": { page: ${pageImport}, layouts: [${layoutImportsStr}] }`);
-  }
-
-  const routesStr = routesStrArr.join(",\n");
-
-  // Inject into main.cl.ts
   let mainContent = fs.readFileSync(mainFile, "utf-8");
   mainContent = mainContent.replace(
     /\/\/ ROUTES_START[\s\S]*?\/\/ ROUTES_END/,
