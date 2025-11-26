@@ -2,98 +2,98 @@ import fs from "fs";
 import path from "path";
 
 interface RouteEntry {
-  route: string;
-  file: string;
+  route: string;      // "/blog/:id"
+  file: string;       // "./routes/blog/[id].cl"
+  layouts: string[];  // array of import strings
 }
 
-export function getRouteEntries(routesDir: string): RouteEntry[] {
+// Detect if a file is a layout
+function isLayoutFile(file: string) {
+  return path.basename(file) === "__layout.cl.ts";
+}
+
+// Recursively get all route files
+function getAllRoutes(dir: string, routesDir: string, parentRoute = ''): RouteEntry[] {
   const entries: RouteEntry[] = [];
 
-  function walk(dir: string, parentRoute = "") {
-    if (!fs.existsSync(dir)) return;
+  if (!fs.existsSync(dir)) return entries;
 
-    const items = fs.readdirSync(dir, { withFileTypes: true });
-    for (const item of items) {
-      const full = path.join(dir, item.name);
-      if (item.isDirectory()) {
-        walk(full, parentRoute + "/" + item.name);
-      } else if (item.isFile() && item.name.endsWith(".cl.ts") && item.name !== "__layout.cl.ts") {
-        let route = parentRoute + "/" + item.name.replace(".cl.ts", "");
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const fullPath = path.join(dir, file);
+    const stat = fs.statSync(fullPath);
 
-        if (item.name === "index.cl.ts") {
-          route = parentRoute || "/";
-        }
+    if (stat.isDirectory()) {
+      entries.push(...getAllRoutes(fullPath, routesDir, path.join(parentRoute, file)));
+    } else if (file.endsWith(".cl.ts") && !isLayoutFile(file)) {
+      let routePath = path.join(parentRoute, file.replace(".cl.ts", ""));
+      if (file === "index.cl.ts") routePath = parentRoute || "/";
+      routePath = routePath.replace(/\\/g, "/");
+      if (!routePath.startsWith("/")) routePath = "/" + routePath;
 
-        route = route.replace(/\\/g, "/");
-        if (!route.startsWith("/")) route = "/" + route;
+      // Convert [id] -> :id
+      routePath = routePath.replace(/\[(.+?)\]/g, ":$1");
 
-        const rel = path.relative(routesDir, full).replace(/\\/g, "/");
-        const file = "./routes/" + rel;
+      const layouts = getLayoutsForFile(fullPath, routesDir);
 
-        entries.push({ route, file });
-      }
+      entries.push({
+        route: routePath,
+        file: "./routes/" + path.relative(routesDir, fullPath).replace(/\\/g, "/").replace(".ts", ""),
+        layouts,
+      });
     }
   }
 
-  walk(routesDir);
   return entries;
 }
 
-export function getLayoutsForPage(pageFullPath: string, routesDir: string): string[] {
+// Collect layouts from closest folder up to root
+function getLayoutsForFile(filePath: string, routesDir: string): string[] {
   const layouts: string[] = [];
+  let dir = path.dirname(filePath);
 
-  let dir = path.dirname(pageFullPath);
-
-  while (true) {
-    if (!dir.startsWith(routesDir)) break;
-
+  while (dir.startsWith(routesDir)) {
     const layoutFile = path.join(dir, "__layout.cl.ts");
     if (fs.existsSync(layoutFile)) {
       const content = fs.readFileSync(layoutFile, "utf-8");
-      if (/export\s+const\s+layout\s*=\s*false/.test(content) || /layout\s*=\s*false/.test(content)) {
-        break;
-      }
+      if (/layout\s*=\s*false/.test(content)) break; // stop at layout=false
 
-      const rel = path.relative(routesDir, layoutFile).replace(/\\/g, "/").replace(/\.ts$/, "");
-      const importPath = `() => import("./routes/${rel}")`;
-      layouts.push(importPath);
+      const relImport = "./routes/" + path.relative(routesDir, layoutFile).replace(/\\/g, "/").replace(".ts", "");
+      layouts.unshift(`() => import("${relImport}")`); // outermost first
     }
-
-    if (path.resolve(dir) === path.resolve(routesDir)) break;
     dir = path.dirname(dir);
   }
 
   return layouts;
 }
 
+// Convert RouteEntry to main.cl.ts string
+function routeFileToEntry(e: RouteEntry): string {
+  const paramMatch = e.route.match(/:([a-zA-Z0-9_]+)/);
+  if (paramMatch) {
+    const paramName = paramMatch[1];
+    const importPath = e.file.replace(`[${paramName}]`, `\${params.${paramName}}`);
+    return `"${e.route}": { page: () => import("${e.file}"), layouts: [${e.layouts.join(", ")}] }`;
+  } else {
+    return `"${e.route}": { page: () => import("${e.file}"), layouts: [${e.layouts.join(", ")}] }`;
+  }
+}
+
+// Main function
 export function processRoutes(appDir: string) {
   const routesDir = path.join(appDir, "src/routes");
   const mainFile = path.join(appDir, "src/main.cl.ts");
 
-  const entries = getRouteEntries(routesDir);
-
-  const routesStrPieces: string[] = [];
-
-  for (const e of entries) {
-    const relPath = e.file.replace(/^\.\/routes\//, "");
-    const pageFullPath = path.join(routesDir, relPath);
-
-    const pageImport = `() => import("${e.file.replace(".cl.ts", ".cl")}")`;
-
-    const layoutImports = getLayoutsForPage(pageFullPath, routesDir);
-
-    const layoutsList = layoutImports.length ? layoutImports.join(", ") : "";
-
-    routesStrPieces.push(`  "${e.route}": { page: ${pageImport}, layouts: [${layoutsList}] }`);
-  }
-
-  const routesStr = routesStrPieces.join(",\n");
+  const entries = getAllRoutes(routesDir, routesDir);
+  const routesStr = entries.map(routeFileToEntry).join(",\n");
 
   let mainContent = fs.readFileSync(mainFile, "utf-8");
+
   mainContent = mainContent.replace(
     /\/\/ ROUTES_START[\s\S]*?\/\/ ROUTES_END/,
     `// ROUTES_START\nexport const routes: Record<string, RouteEntry> = {\n${routesStr}\n};\n// ROUTES_END`
   );
 
   fs.writeFileSync(mainFile, mainContent, "utf-8");
+  console.log("Routes processed:", entries.map(e => e.route));
 }

@@ -14,6 +14,7 @@
     "clarity": "./create.js"
   },
   "scripts": {
+    "dev": "tsc -w -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build"
   },
