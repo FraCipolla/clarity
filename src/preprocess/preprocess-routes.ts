@@ -55,7 +55,7 @@ function getLayoutsForPage(pageFile: string, routesDir: string): string[] {
     const content = fs.readFileSync(layoutFile, "utf-8");
     if (/layout\s*=\s*false/.test(content)) continue;
 
-    const relativeImport = "./" + path.relative(path.dirname(pageFile), layoutFile).replace(/\\/g, "/").replace(".ts", "");
+    const relativeImport = "./" + path.relative(routesDir, layoutFile).replace(/\\/g, "/").replace(".ts", "");
     layouts.push(`() => import("${relativeImport}")`);
   }
 
