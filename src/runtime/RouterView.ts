@@ -21,40 +21,45 @@ window.addEventListener("popstate", () => {
   currentRoute.value = window.location.pathname;
 });
 
+function compilePattern(route: string) {
+  const keys: string[] = [];
+
+  let pattern = route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  pattern = pattern.replace(/\[(.+?)\]/g, (_, key) => {
+    keys.push(key);
+    return "([^/]+)";
+  });
+
+  pattern = pattern.replace(/\/+$/, "");
+  pattern = "^" + pattern + "/?$";
+
+  return { regex: new RegExp(pattern), keys };
+}
 
 function matchRoute(path: string, routes: Record<string, RouteEntry>) {
   for (const route in routes) {
     const entry = routes[route];
 
     if (!entry._pattern) {
-      const keys: string[] = [];
-
-      const pattern = route
-        .replace(/\[(.+?)\]/g, (_, key) => {
-          keys.push(key);
-          return "([^/]+)";
-        })
-        .replace(/\/$/, "");
-
-      entry._pattern = new RegExp("^" + pattern + "$");
+      const { regex, keys } = compilePattern(route);
+      entry._pattern = regex;
       entry._keys = keys;
     }
 
     const match = path.match(entry._pattern!);
-    if (match) {
-      const params: Record<string, string> = {};
-      entry._keys!.forEach((key, idx) => {
-        params[key] = match[idx + 1];
-      });
+    if (!match) continue;
 
-      return { entry, params };
-    }
+    const params: Record<string, string> = {};
+    entry._keys!.forEach((key, idx) => {
+      params[key] = match[idx + 1];
+    });
+
+    return { entry, params };
   }
 
   return null;
 }
-
-
 
 export function RouterView(routes: Record<string, RouteEntry>) {
   const container = document.createElement("div");
