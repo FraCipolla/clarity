@@ -1,3 +1,3 @@
-import * as tags from "@fracipolla/clarity"; // all exported functions
+import * as tags from "./dom.js"; // all exported functions
 
 Object.assign(window, tags);
