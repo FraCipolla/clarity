@@ -7,6 +7,11 @@ export interface RouteEntry {
   noLayout?: boolean;
 }
 
+interface PageModule {
+  default: HTMLElement;
+  layout?: boolean;
+}
+
 export const currentRoute = reactive(window.location.pathname);
 
 window.addEventListener("popstate", () => {
@@ -25,9 +30,16 @@ export function RouterView(routes: Record<string, RouteEntry>) {
       return;
     }
 
-    let node = (await routeEntry.page()).default;
+    const pageModule = (await routeEntry.page()) as PageModule;
 
-    if (routeEntry.layouts) {
+    if (pageModule.layout === false) {
+      routeEntry.noLayout = true;
+    }
+
+    let node = pageModule.default;
+
+    // Apply layouts if any
+    if (!routeEntry.noLayout && routeEntry.layouts) {
       for (const layoutImport of routeEntry.layouts) {
         const layoutModule = await layoutImport();
         node = layoutModule.default(node);

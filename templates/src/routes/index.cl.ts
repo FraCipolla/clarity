@@ -1,9 +1,10 @@
-import {reactive} from '@fracipolla/clarity/runtime'
-import {div, p, button} from '@fracipolla/clarity'
+import { reactive } from '@fracipolla/clarity/runtime';
+import { div, p, button } from '@fracipolla/clarity';
 
-reactive count = 0;
+const count = reactive(0);
 
 export default div({},
-  p(`Count: ${count}`),
-  button({ onclick: () => count++ }, "Increment")
+  p("Welcome to Clarity!"),
+  p(`Counter demo: ${count}`),
+  button({ onclick: () => count.value++ }, "Increment")
 );
