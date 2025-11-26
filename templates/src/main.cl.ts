@@ -1,11 +1,8 @@
 // src/main.cl.ts
-import { RouterView } from "@fracipolla/clarity";
+import { RouterView, RouteEntry } from "@fracipolla/clarity";
 
 // ROUTES_START
-export const routes = {
-  "/__layout": () => import("./routes/__layout.cl"),
-  "/about": () => import("./routes/about.cl"),
-  "/": () => import("./routes/index.cl")
+export const routes: Record<string, RouteEntry> = {
 };
 // ROUTES_END
 

@@ -10,8 +10,10 @@ export interface RouteEntry {
 export const currentRoute = reactive(window.location.hash || "#/");
 
 export function RouterView(routes: Record<string, RouteEntry>) {
+  console.log(routes)
   const container = document.createElement("div");
   effect(async () => {
+    console.log(currentRoute.value)
     container.innerHTML = "";
     const routeEntry = routes[currentRoute.value];
     if (!routeEntry) {

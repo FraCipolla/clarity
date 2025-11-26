@@ -28,7 +28,7 @@ export function processRoutes(appDir: string) {
   // entries.forEach(e => wrapPageIfNeeded(path.join(routesDir, path.basename(e.file))));
 
   // Build routes object as string
-  const routesStr = entries.map(e => `  "${e.route}": () => import("${e.file}")`).join(",\n");
+  const routesStr = entries.map(e => `  "${e.route}": () => import("${e.file.replace(".cl.ts", ".cl")}")`).join(",\n");
 
   // Inject into main.cl.ts
   let mainContent = fs.readFileSync(mainFile, "utf-8");
