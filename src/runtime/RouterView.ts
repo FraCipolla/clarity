@@ -38,7 +38,6 @@ function initLinkInterceptor() {
 }
 initLinkInterceptor();
 
-// Compile "/blog/:id" into regex
 function compilePattern(route: string) {
   const keys: string[] = [];
   let pattern = route.replace(/([.+?^${}()|\\])/g, "\\$1");

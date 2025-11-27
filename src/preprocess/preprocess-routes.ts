@@ -2,14 +2,42 @@ import fs from "fs";
 import path from "path";
 
 interface RouteEntry {
-  route: string;      // "/blog/:id"
-  file: string;       // "./routes/blog/[id].cl"
-  layouts: string[];  // array of import strings
+  route: string;
+  file: string;
+  layouts: string[];
 }
 
 // Detect if a file is a layout
 function isLayoutFile(file: string) {
   return path.basename(file) === "__layout.cl.ts";
+}
+
+// Collect layouts from closest folder up to root
+function getLayoutsForFile(filePath: string, routesDir: string): string[] {
+  const layouts: string[] = [];
+  let layoutFiles: string[] = [];
+  let dir = path.dirname(filePath);
+
+  while (dir.startsWith(routesDir)) {
+    const layoutFile = path.join(dir, "__layout.cl.ts");
+    if (fs.existsSync(layoutFile)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      if (/layout\s*=\s*false/.test(content)) break;
+      layoutFiles.push(layoutFile);
+    }
+    dir = path.dirname(dir);
+  }
+
+  // Handle nested layouts from last one to the first
+  layoutFiles.sort((a: string, b: string) => a.length - b.length);
+
+  for (let i = layoutFiles.length - 1; i >= 0; i--) {
+    const content = fs.readFileSync(layoutFiles[i], "utf-8");
+    const relImport = "./routes/" + path.relative(routesDir, layoutFiles[i]).replace(/\\/g, "/").replace(".ts", "");
+    layouts.unshift(`() => import("${relImport}")`);
+    if (/layout\s*=\s*false/.test(content)) break;
+  }
+  return layouts;
 }
 
 // Recursively get all route files
@@ -31,9 +59,8 @@ function getAllRoutes(dir: string, routesDir: string, parentRoute = ''): RouteEn
       routePath = routePath.replace(/\\/g, "/");
       if (!routePath.startsWith("/")) routePath = "/" + routePath;
 
-      // Convert [id] -> :id
       routePath = routePath.replace(/\[(.+?)\]/g, ":$1");
-
+      // console.log(fullPath, routesDir)
       const layouts = getLayoutsForFile(fullPath, routesDir);
 
       entries.push({
@@ -45,26 +72,6 @@ function getAllRoutes(dir: string, routesDir: string, parentRoute = ''): RouteEn
   }
 
   return entries;
-}
-
-// Collect layouts from closest folder up to root
-function getLayoutsForFile(filePath: string, routesDir: string): string[] {
-  const layouts: string[] = [];
-  let dir = path.dirname(filePath);
-
-  while (dir.startsWith(routesDir)) {
-    const layoutFile = path.join(dir, "__layout.cl.ts");
-    if (fs.existsSync(layoutFile)) {
-      const content = fs.readFileSync(layoutFile, "utf-8");
-      if (/layout\s*=\s*false/.test(content)) break; // stop at layout=false
-
-      const relImport = "./routes/" + path.relative(routesDir, layoutFile).replace(/\\/g, "/").replace(".ts", "");
-      layouts.unshift(`() => import("${relImport}")`); // outermost first
-    }
-    dir = path.dirname(dir);
-  }
-
-  return layouts;
 }
 
 // Convert RouteEntry to main.cl.ts string
