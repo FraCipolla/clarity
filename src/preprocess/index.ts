@@ -1,4 +1,4 @@
-import { Node, Project, SyntaxKind, VariableDeclaration,TemplateExpression } from "ts-morph";
+import { Node, Project, SyntaxKind, VariableDeclaration, TemplateExpression, BinaryExpression, PrefixUnaryExpression, PostfixUnaryExpression, SyntaxList } from "ts-morph";
 
 export function preprocessCode(code: string): string {
   const reactiveVars = new Set<string>();
@@ -19,12 +19,13 @@ export function preprocessCode(code: string): string {
         currentVar = match[2];
         let rest = match[3];
         if (rest.trim().endsWith(";")) {
+          const value = rest.replace(/;$/, "");
           if (type === "reactive") {
             reactiveVars.add(currentVar);
-            outputLines.push(`let ${currentVar} = reactive(${rest.slice(0, -1)});`);
+            outputLines.push(`let ${currentVar} = reactive(${value});`);
           } else {
             computeVars.add(currentVar);
-            outputLines.push(`let ${currentVar} = computed(() => ${rest.slice(0, -1)});`);
+            outputLines.push(`let ${currentVar} = computed(() => ${value});`);
           }
         } else {
           collecting = true;
@@ -54,8 +55,7 @@ export function preprocessCode(code: string): string {
   const project = new Project();
   const sourceFile = project.createSourceFile("__temp.ts", tempCode, { overwrite: true });
 
-  // ----- AST transformations -----
-  const skipUnwrapCalls = new Set(["Grid"]);
+  const skipUnwrapCalls = new Set(["Grid"]); // any special functions to skip
 
   sourceFile.forEachDescendant((node: Node) => {
     const kind = node.getKind();
@@ -90,44 +90,63 @@ export function preprocessCode(code: string): string {
   
       node.replaceWithText(`[${parts.join(", ")}]`);
       return;
-    }    
+    }
 
     if (kind === SyntaxKind.Identifier) {
       const name = node.getText();
       if (!reactiveVars.has(name) && !computeVars.has(name)) return;
 
-      let parent = node.getParent();
-      let inTemplate = false;
-      while (parent) {
-        if (parent.getKind() === SyntaxKind.CallExpression) {
-          const callExpr = parent.asKindOrThrow(SyntaxKind.CallExpression);
-          const funcName = callExpr.getExpression().getText();
-          if (skipUnwrapCalls.has(funcName)) return;
-        };
-        if (parent.getKind() === SyntaxKind.TemplateExpression) {
-          inTemplate = true;
-          break;
+      const parent = node.getParent();
+
+      if (parent && parent.getKind() === SyntaxKind.VariableDeclaration) {
+        const varDecl = parent as VariableDeclaration;
+        if (varDecl.getNameNode() === node) return;
+      }
+
+      let isWrite = false;
+      if (parent) {
+        const pk = parent.getKind();
+
+        if (pk === SyntaxKind.BinaryExpression) {
+          const bin = parent as BinaryExpression;
+          const op = bin.getOperatorToken().getKind();
+          // =, +=, -=, *=, /=, etc.
+          const writeOps = new Set([
+            SyntaxKind.EqualsToken,
+            SyntaxKind.PlusEqualsToken,
+            SyntaxKind.MinusEqualsToken,
+            SyntaxKind.AsteriskEqualsToken,
+            SyntaxKind.SlashEqualsToken,
+            SyntaxKind.PercentToken,
+            SyntaxKind.PercentEqualsToken,
+            SyntaxKind.AmpersandEqualsToken,
+            SyntaxKind.BarEqualsToken,
+            SyntaxKind.CaretEqualsToken,
+            SyntaxKind.LessThanLessThanEqualsToken,
+            SyntaxKind.GreaterThanGreaterThanEqualsToken,
+            SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+          ]);
+          if (bin.getLeft() === node && writeOps.has(op)) isWrite = true;
+        } else if (pk === SyntaxKind.PrefixUnaryExpression || pk === SyntaxKind.PostfixUnaryExpression) {
+          const unary = parent as PrefixUnaryExpression | PostfixUnaryExpression;
+          const op = unary.getOperatorToken();
+          const incrementOps = new Set([SyntaxKind.PlusPlusToken, SyntaxKind.MinusMinusToken]);
+          if (incrementOps.has(op)) isWrite = true;
         }
-        parent = parent.getParent();
-      }
-      if (inTemplate) return;
 
-      const p = node.getParent();
-      if (p) {
-          if (p.getKind() === SyntaxKind.VariableDeclaration) {
-            const varDecl = p as VariableDeclaration;
-            if (varDecl.getNameNode() === node) return;
+        if (pk === SyntaxKind.CallExpression) {
+          const call = parent.asKindOrThrow(SyntaxKind.CallExpression);
+          const expr = call.getExpression().getText();
+          if (expr === "console.log") {
+            node.replaceWithText(name + ".value");
+            return;
           }
-          if (p.getKind() === SyntaxKind.ArrayLiteralExpression) return;
-          const parent = p.getParent();
-          if (
-            p.getKind() === SyntaxKind.PropertyAssignment && parent &&
-            parent.getKind() === SyntaxKind.ObjectLiteralExpression
-          ) return;
-          if (p.getKind() === SyntaxKind.SpreadElement) return;
+        }
       }
 
-      node.replaceWithText(name + ".value");
+      if (isWrite) {
+        node.replaceWithText(name + ".value");
+      }
     }
   });
 

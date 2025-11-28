@@ -17,77 +17,75 @@ export function isReactive(obj: any): obj is Reactive<any> {
   return !!obj && obj[IS_REACTIVE] === true;
 }
 
-function isDomNode(value: any) {
-  return value instanceof Node;
-}
-
 export function reactive<T>(initial: T): Reactive<T> {
   const listeners = new Set<Effect>();
   const notify = () => listeners.forEach(fn => fn());
 
-  let inner = initial;
+  let inner: any = initial;
 
-  // If inner value is an object → proxy it
-  if (typeof initial === "object" && initial !== null && !isDomNode(initial)) {
-    inner = new Proxy(initial as any, {
-      get(obj, prop, receiver) {
-        const value = Reflect.get(obj, prop, receiver);
-
+  function makeProxy(obj: any): any {
+    return new Proxy(obj, {
+      get(target, prop, recv) {
         if (currentEffect) listeners.add(currentEffect);
-        return value;
+        return Reflect.get(target, prop, recv);
       },
-
-      set(obj, prop, value) {
-        const result = Reflect.set(obj, prop, value);
+      set(target, prop, val, recv) {
+        const res = Reflect.set(target, prop, val, recv);
         notify();
-        return result;
+        return res;
       }
     });
   }
 
+  // if (typeof initial === "object" && initial !== null) {
+  //   inner = makeProxy(initial);
+  // }
+
   const wrapper: Reactive<T> = {
-    value: inner as T,
+    value: inner,
     [IS_REACTIVE]: true
   };
 
-  return new Proxy(wrapper, {
-    get(obj, prop, receiver) {
-      if (prop === IS_REACTIVE) return true;
-
+  return new Proxy(wrapper as any, {
+    get(obj, prop, recv) {
       if (prop === "value") {
         if (currentEffect) listeners.add(currentEffect);
-        return Reflect.get(obj, prop, receiver);
+        return obj.value;
       }
 
-      return Reflect.get(obj, prop, receiver);
+      if (
+        typeof prop === "string" &&
+        obj.value &&
+        Object.prototype.hasOwnProperty.call(obj.value, prop)
+      ) {
+        if (currentEffect) listeners.add(currentEffect);
+        return obj.value[prop];
+      }
+
+      return Reflect.get(obj, prop, recv);
     },
 
-    set(obj, prop, value) {
+    set(obj, prop, val, recv) {
       if (prop === "value") {
-        if (typeof value === "object" && value !== null && !isDomNode(value)) {
-          obj.value = new Proxy(value as any, {
-            get(target, key, recv) {
-              if (currentEffect) listeners.add(currentEffect);
-              return Reflect.get(target, key, recv);
-            },
-            set(target, key, val) {
-              const ok = Reflect.set(target, key, val);
-              notify();
-              return ok;
-            }
-          });
-        } else {
-          obj.value = value;
-        }
-
+        obj.value = typeof val === "object" ? makeProxy(val) : val;
         notify();
         return true;
       }
 
-      return Reflect.set(obj, prop, value);
+      if (
+        typeof prop === "string" &&
+        obj.value &&
+        Object.prototype.hasOwnProperty.call(obj.value, prop)
+      ) {
+        obj.value[prop] = val;
+        return true;
+      }
+
+      return Reflect.set(obj, prop, val, recv);
     }
   });
 }
+
 
 export function computed<T>(fn: () => T): Reactive<T> {
   const r = reactive<T>(fn());
@@ -95,69 +93,12 @@ export function computed<T>(fn: () => T): Reactive<T> {
   effect(() => {
     r.value = fn();
   });
-
+  (r as any)._isComputed = true
   return r;
 }
 
-export class ReactiveMap<K, V> {
-  private map = new Map<K, { value: V }>(); // store reactive values internally
-  private deps = new Map<K, Set<Effect>>();
-
-  constructor(entries?: readonly (readonly [K, V])[]) {
-    if (entries) {
-      for (const [k, v] of entries) {
-        this.map.set(k, reactive(v));
-      }
-    }
-  }
-
-  private track(key: K) {
-    if (currentEffect) {
-      let set = this.deps.get(key);
-      if (!set) {
-        set = new Set();
-        this.deps.set(key, set);
-      }
-      set.add(currentEffect);
-    }
-  }
-
-  private trigger(key: K) {
-    const set = this.deps.get(key);
-    set?.forEach(fn => fn());
-  }
-
-  get(key: K): { value: V } | undefined {
-    const entry = this.map.get(key);
-    if (entry) this.track(key);
-    return entry;
-  }
-
-  set(key: K, value: V) {
-    let reactiveValue = isReactive(value) ? value : reactive(value);
-    this.map.set(key, reactiveValue);
-    this.trigger(key);
-    return this;
-  }
-
-  has(key: K) {
-    return this.map.has(key);
-  }
-
-  delete(key: K) {
-    const result = this.map.delete(key);
-    this.trigger(key as K);
-    return result;
-  }
-
-  clear() {
-    this.map.clear();
-    this.deps.forEach(set => set.forEach(fn => fn()));
-  }
-}
-
 export function reactiveComponent(render: () => HTMLElement): HTMLElement {
-  let el = null;
+  let el: HTMLElement;
 
   effect(() => {
     const newEl = render();

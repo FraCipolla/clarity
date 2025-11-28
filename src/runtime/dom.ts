@@ -1,4 +1,5 @@
 import { isReactive, effect } from "./reactive.js";
+import type { Reactive } from "./reactive.js";
 
 export type Child =
   | string
@@ -11,6 +12,26 @@ export type Child =
   | { value: any }; // unified reactive
 
 export type Attrs = Record<string, any>;
+
+function unwrap(val: any): any {
+  if (isReactive(val)) return val.value;
+  if (Array.isArray(val)) return val.map(unwrap);
+  if (val && typeof val === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(val)) out[k] = unwrap(v);
+    return out;
+  }
+  return val;
+}
+
+function hasReactive(value: any): boolean {
+  if (isReactive(value)) return true;
+  if (Array.isArray(value)) return value.some(hasReactive);
+  if (value && typeof value === "object") {
+    return Object.values(value).some(hasReactive);
+  }
+  return false;
+}
 
 export function createElement(
   tagName: string,
@@ -34,39 +55,61 @@ export function createElement(
   }
 
   const el = document.createElement(tagName);
-
+  
   for (const [key, value] of Object.entries(attrs)) {
-    // Event handler
     if (key.startsWith("on") && typeof value === "function") {
       el.addEventListener(key.slice(2).toLowerCase(), value);
       continue;
     }
-    // Reactive attribute (primitive or object)
+    if (typeof value === "function" && value._isComputed) {
+      // wrap in effect to unwrap
+      effect(() => {
+        const unwrapped = value(); // call computed function to get value
+        if (key === "style" && typeof unwrapped === "object") {
+          for (const [prop, raw] of Object.entries(unwrapped)) {
+            const cssProp = prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+            el.style.setProperty(cssProp, String(raw));
+          }
+        } else {
+          el.setAttribute(key, String(unwrapped));
+        }
+      });
+      continue;
+    }
     if (isReactive(value)) {
       effect(() => {
         const unwrapped = value.value;
-        // STYLE object
         if (key === "style" && typeof unwrapped === "object" && unwrapped !== null) {
-          for (const [prop, val] of Object.entries(unwrapped)) {
+          for (const [prop, raw] of Object.entries(unwrapped)) {
+            const val = unwrap(raw);
             const cssProp = prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+          
             el.style.setProperty(cssProp, String(val));
           }
           return;
         }
-
-        // Primitive attribute
         el.setAttribute(key, String(unwrapped));
       });
-
       continue;
     }
-
-    // Non-reactive STYLE object
     if (key === "style" && typeof value === "object" && value !== null) {
-      for (const [prop, val] of Object.entries(value)) {
-        const cssProp = prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
-        el.style.setProperty(cssProp, String(val));
+      const apply = () => {
+        for (const [prop, val] of Object.entries(value)) {
+          const unwrapped = unwrap(val);
+          const cssValue = Array.isArray(unwrapped)
+            ? unwrapped.join("")
+            : unwrapped;
+        
+          const cssProp = prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+          el.style.setProperty(cssProp, String(cssValue));
+        }
+      };
+    
+      if (hasReactive(value)) {
+        effect(apply);
       }
+    
+      apply();
       continue;
     }
 
@@ -232,3 +275,62 @@ const tags = ["a","abbr","address","area","article","aside","audio","b","base","
 export const isHtmlTag = ((s: string) => {
   return tags.includes(s);
 })
+
+export function If(condition: Reactive<boolean>, render: () => Node) {
+  const placeholder = document.createTextNode("");
+  let currentNode: Node | null = null;
+
+  effect(() => {
+    // Remove previous node
+    if (currentNode) {
+      (currentNode as ChildNode).remove();
+      currentNode = null;
+    }
+
+    if (condition.value) {
+      currentNode = render();
+      placeholder.parentNode?.insertBefore(currentNode, placeholder.nextSibling);
+    }
+  });
+
+  return placeholder;
+}
+
+export function For<T>(list: Reactive<T[]>, render: (item: T) => Node) {
+  const container = document.createDocumentFragment();
+
+  effect(() => {
+    container.textContent = "";
+    list.value.forEach(item => container.appendChild(render(item)));
+  });
+
+  return container;
+}
+
+export function IfElse(
+  condition: Reactive<boolean>,
+  renderThen: () => Node,
+  renderElse: () => Node
+) {
+  const placeholder = document.createTextNode("");
+  let currentNode: Node | null = null;
+
+  effect(() => {
+    // Remove current node
+    if (currentNode && currentNode.parentNode) {
+      currentNode.parentNode.removeChild(currentNode);
+      currentNode = null;
+    }
+
+    // Mount the appropriate branch
+    if (condition.value) {
+      currentNode = renderThen();
+    } else {
+      currentNode = renderElse();
+    }
+
+    placeholder.parentNode?.insertBefore(currentNode, placeholder.nextSibling);
+  });
+
+  return placeholder;
+}
