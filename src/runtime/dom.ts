@@ -35,23 +35,16 @@ export function createElement(
 
   const el = document.createElement(tagName);
 
-  // -----------------------------------------------
-  // ATTRIBUTES
-  // -----------------------------------------------
   for (const [key, value] of Object.entries(attrs)) {
-
     // Event handler
     if (key.startsWith("on") && typeof value === "function") {
       el.addEventListener(key.slice(2).toLowerCase(), value);
       continue;
     }
-
     // Reactive attribute (primitive or object)
     if (isReactive(value)) {
-      console.log("reactive")
       effect(() => {
         const unwrapped = value.value;
-
         // STYLE object
         if (key === "style" && typeof unwrapped === "object" && unwrapped !== null) {
           for (const [prop, val] of Object.entries(unwrapped)) {
@@ -81,9 +74,6 @@ export function createElement(
     el.setAttribute(key, value);
   }
 
-  // -----------------------------------------------
-  // CHILDREN
-  // -----------------------------------------------
   function append(child: Child) {
     if (child == null || child === false) return;
 

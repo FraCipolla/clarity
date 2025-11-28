@@ -13,7 +13,7 @@ export function preprocessCode(code: string): string {
 
   for (let line of lines) {
     if (!collecting) {
-      const match = line.match(/^(reactive|computed)\s+([a-zA-Z0-9_]+)\s*=\s*(.*)$/);
+      const match = line.match(/^\s*(reactive|computed)\s+([a-zA-Z0-9_]+)\s*=\s*(.*)$/);
       if (match) {
         type = match[1];
         currentVar = match[2];
@@ -63,7 +63,7 @@ export function preprocessCode(code: string): string {
     if (kind === SyntaxKind.TemplateExpression) {
       const parts = [];
       const templateNode = node as TemplateExpression;
-      const headText = templateNode.getHead().getText().slice(1, -1);
+      const headText = templateNode.getHead().getText().slice(1, -2);
       if (headText) parts.push(JSON.stringify(headText));
   
       templateNode.getTemplateSpans().forEach(span => {

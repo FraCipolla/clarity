@@ -1,8 +1,8 @@
 import { div, Child } from "./dom.js";
-import { effect, isReactive } from "./reactive.js";
+import { effect, isReactive, Reactive } from "./reactive.js";
 
 export function Grid(
-  columns: number | { value: number },
+  columns: number | Reactive<number>,
   gap: string | { value: string } = "10px",
   items: any[] | { value: any[] },
   renderItem: (item: any) => HTMLElement = (item) => div({}, item)
@@ -26,5 +26,19 @@ export function Grid(
   if ("value" in items) effect(updateGrid);
 
   updateGrid();
+  return container;
+}
+
+export function Card(
+  header: HTMLElement,
+  body: HTMLElement,
+  footer: HTMLElement
+): HTMLElement {
+  const container = div({ class: "card" });
+  
+  container.appendChild(header);
+  container.appendChild(body);
+  container.appendChild(footer);
+
   return container;
 }
