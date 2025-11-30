@@ -95,10 +95,12 @@ effect(() => console.log(count));
 
 Clarity supports reactive variables that can be shared or persisted:
 
-|Keyword	|Description|
-|global	|In-memory reactive variable shared across modules.|
-|store	|Reactive variable persisted to localStorage.|
-|session	|Reactive variable persisted to sessionStorage.|
+| Keyword   | Description                                        |
+| --------- | -------------------------------------------------- |
+| `global`  | In-memory reactive variable shared across modules. |
+| `store`   | Reactive variable persisted to `localStorage`.     |
+| `session` | Reactive variable persisted to `sessionStorage`.   |
+
 
 **Example:**
 ```
