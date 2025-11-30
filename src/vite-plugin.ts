@@ -24,21 +24,27 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
     },
 
     async transform(code: string, id: string) {
-      const ext = path.extname(id);
-      if (!extensions.includes(ext) && !id.endsWith(".ts") && !id.endsWith(".js")) return null;
+      const ext = id.endsWith(".cl.ts");
       if (id.includes("node_modules")) return null;
+      if (ext) {
+        const transformed = preprocessCode(code, id);
+        const root = process.cwd();
+        const rel = path.relative(root, id);
+        const out = path.resolve(root, ".preprocessed", rel);
 
-      const transformed = preprocessCode(code);
+        const outDir = path.dirname(out);
+        fs.mkdirSync(outDir, { recursive: true });
+        const outFile = out.replace(/\.[cm]?jsx?$/, ".ts").replace(/\.cl\.ts$/, ".ts");
 
-      if (debug) {
-        const outDir = path.resolve("./.preprocessed");
-        if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-        const fileName = path.basename(id).replace(/\.[jt]s$/, ".ts");
-        fs.writeFileSync(path.join(outDir, fileName), transformed, "utf-8");
+        fs.writeFileSync(outFile, transformed, "utf-8");
+        
+        return {
+          code: transformed,
+          map: null,
+        };
       }
-
       return {
-        code: transformed,
+        code: code,
         map: null,
       };
     },

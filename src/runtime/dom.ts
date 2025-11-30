@@ -1,5 +1,5 @@
 import { isReactive, effect } from "./reactive.js";
-import type { Reactive } from "./reactive.js";
+import type { DeepReactive, Reactive } from "./reactive.js";
 
 export type Child =
   | string
@@ -13,16 +13,17 @@ export type Child =
 
 export type Attrs = Record<string, any>;
 
-function unwrap(val: any): any {
-  if (isReactive(val)) return val.value;
-  if (Array.isArray(val)) return val.map(unwrap);
-  if (val && typeof val === "object") {
-    const out: any = {};
-    for (const [k, v] of Object.entries(val)) out[k] = unwrap(v);
-    return out;
+function unwrap<T>(value: T): any {
+  if (isReactive(value)) return unwrap(value.value);
+  if (Array.isArray(value)) return value.map(unwrap);
+  if (typeof value === "object" && value !== null) {
+    const obj: any = {};
+    for (const key in value) obj[key] = unwrap((value as any)[key]);
+    return obj;
   }
-  return val;
+  return value;
 }
+
 
 function hasReactive(value: any): boolean {
   if (isReactive(value)) return true;
@@ -270,7 +271,7 @@ export const video = (attrsOrChild?: Attrs | Child, ...children: Child[]) => cre
 export const wbr = (attrsOrChild?: Attrs | Child, ...children: Child[]) => createElement("wbr", attrsOrChild, ...children);
 
 const tags = [
-  "If",
+  "If", "For",
   "a","abbr","address","area","article","aside","audio","b","base","bdi","bdo","blockquote","body","br","button","canvas","caption","cite","code","col","colgroup","data","datalist","dd","del","details","dfn","dialog","div","dl","dt","em","embed","fieldset","figcaption","figure","footer","form","h1","h2","h3","h4","h5","h6","head","header","hr","html","i","iframe","img","input","ins","kbd","label","legend","li","link","main","map","mark","meta","meter","nav","noscript","object","ol","optgroup","option","output","p","param","picture","pre","progress","q","rp","rt","ruby","s","samp","script","section","select","small","source","span","strong","style","sub","summary","sup","table","tbody","td","template","textarea","tfoot","th","thead","time","title","tr","track","u","ul","varTag","video","wbr",
 ]
 
@@ -298,13 +299,45 @@ export function If(condition: Reactive<boolean>, render: () => Node) {
   return placeholder;
 }
 
-export function For<T>(list: Reactive<T[]>, render: (item: T) => Node) {
-  const container = document.createDocumentFragment();
+export function each<T>(list: T[] | Reactive<T[]>, ) {
 
-  effect(() => {
-    container.textContent = "";
-    list.value.forEach(item => container.appendChild(render(item)));
-  });
+}
+
+export function For<T>(
+  list: T[] | Reactive<DeepReactive<T>[]>,
+  render: (item: T) => ChildNode
+) {
+  const container = document.createElement("div");
+  const nodes = new Map<any, ChildNode>(); // key must be stable identity
+
+  if (isReactive(list)) {
+    effect(() => {
+      const arr = list.value;
+
+      // Remove old nodes
+      for (const [key, node] of nodes) {
+        if (!arr.includes(key)) {
+          node.parentNode?.removeChild(node);
+          nodes.delete(key);
+        }
+      }
+
+      // Add or update nodes
+      for (const raw of arr) {
+        const key = isReactive(raw) ? raw.value : raw;
+        if (!nodes.has(key)) {
+          const dom = render(unwrap(raw) as T);
+          nodes.set(key, dom);
+          container.appendChild(dom);
+        }
+      }
+    });
+  } else {
+    // Non-reactive list
+    for (const item of list) {
+      container.appendChild(render(item));
+    }
+  }
 
   return container;
 }

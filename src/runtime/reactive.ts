@@ -34,12 +34,51 @@ function makeReactiveObject(obj: Record<string, any>): any {
   return result;
 }
 
+function makeReactiveArray<T>(arr: T[]): Reactive<T[]> {
+  const listeners = new Set<Effect>();
+  const notify = () => listeners.forEach(fn => fn());
+
+  const reactiveElements = arr.map(v => (typeof v === "object" ? reactive(v) : v));
+
+  const proxy = new Proxy(reactiveElements, {
+    get(target, prop, receiver) {
+      if (currentEffect) listeners.add(currentEffect);
+
+      const value = Reflect.get(target, prop, receiver);
+
+      if (["push","pop","shift","unshift","splice","sort","reverse"].includes(prop as string)) {
+        return (...args: any[]) => {
+          const wrappedArgs = args.map(a => (typeof a === "object" ? reactive(a) : a));
+          const res = (value as Function).apply(target, wrappedArgs);
+          notify();
+          return res;
+        };
+      }
+
+      return value;
+    },
+
+    set(target, prop, value, receiver) {
+      if (typeof value === "object" && value !== null && !isReactive(value)) {
+        value = reactive(value);
+      }
+      const res = Reflect.set(target, prop, value, receiver);
+      notify();
+      return res;
+    }
+  });
+
+  return { value: proxy, [IS_REACTIVE]: true } as Reactive<T[]>;
+}
+
 export function reactive<T>(initial: T): DeepReactive<T>  {
   const listeners = new Set<Effect>();
   const notify = () => listeners.forEach(fn => fn());
   let inner: any;
 
-  if (typeof initial === "object" && initial !== null) {
+  if (Array.isArray(initial)) {
+    return makeReactiveArray(initial) as any;
+  } else if (typeof initial === "object" && initial !== null) {
     inner = makeReactiveObject(initial);
   } else {
     inner = initial;

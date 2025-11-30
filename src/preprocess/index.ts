@@ -8,10 +8,13 @@ import {
   PrefixUnaryExpression,
   PostfixUnaryExpression,
   PropertyAccessExpression,
+  ImportDeclaration,
   ObjectLiteralExpression,
   SyntaxList } from "ts-morph";
 
-  import { isHtmlTag } from "../runtime/dom.js";
+import { isHtmlTag } from "../runtime/dom.js";
+import * as fs from "fs";
+import * as path from "path";
 
 function isWriteContext(node: Node): boolean {
   const parent = node.getParent();
@@ -103,21 +106,21 @@ function isWriteContext(node: Node): boolean {
   return false;
 }
 
-export function preprocessCode(code: string): string {
+const storeVars = new Set<{var: string, file: string}>();
+export function preprocessCode(code: string, filePath: string): string {
+  if (!filePath.endsWith(".cl.ts")) return code;
   const reactiveVars = new Set<string>();
   const computeVars = new Set<string>();
-  const storeVars = new Set<string>();
   const lines = code.split("\n");
   const outputLines: string[] = [];
-
   let collecting = false;
   let buffer: string[] = [];
   let currentVar = "";
   let type = "";
-
+  
   for (let line of lines) {
     if (!collecting) {
-      const match = line.match(/^\s*(reactive|computed)\s+([a-zA-Z0-9_]+)\s*=\s*(.*)$/);
+      const match = line.match(/^\s*(reactive|computed|store)\s+([a-zA-Z0-9_]+)\s*=\s*(.*)$/);
       if (match) {
         type = match[1];
         currentVar = match[2];
@@ -126,14 +129,12 @@ export function preprocessCode(code: string): string {
           const value = rest.replace(/;$/, "");
           if (type === "reactive") {
             reactiveVars.add(currentVar);
-            outputLines.push(`let ${currentVar} = reactive(${value});`);
+            outputLines.push(`const ${currentVar} = reactive(${value});`);
           } else if (type === "store") {
-            computeVars.add(currentVar);
-            storeVars.add(currentVar);
             outputLines.push(`export const ${currentVar} = reactive(${value});`);
           } else {
             computeVars.add(currentVar);
-            outputLines.push(`let ${currentVar} = computed(() => ${value});`);
+            outputLines.push(`const ${currentVar} = computed(() => ${value});`);
           }
         } else {
           collecting = true;
@@ -148,14 +149,12 @@ export function preprocessCode(code: string): string {
         const value = buffer.join("\n").replace(/;$/, "");
         if (type === "reactive") {
           reactiveVars.add(currentVar);
-          outputLines.push(`let ${currentVar} = reactive(${value});`);
+          outputLines.push(`const ${currentVar} = reactive(${value});`);
         } else if (type === "store") {
-          computeVars.add(currentVar);
-          storeVars.add(currentVar);
           outputLines.push(`export const ${currentVar} = reactive(${value});`);
         } else {
           computeVars.add(currentVar);
-          outputLines.push(`let ${currentVar} = computed(() => ${value});`);
+          outputLines.push(`const ${currentVar} = computed(() => ${value});`);
         }
         collecting = false;
         buffer = [];
@@ -166,8 +165,22 @@ export function preprocessCode(code: string): string {
   const tempCode = outputLines.join("\n");
   const project = new Project();
   const sourceFile = project.createSourceFile("__temp.ts", tempCode, { overwrite: true });
+  const dir = path.dirname(filePath);
+  sourceFile.getImportDeclarations().forEach((imp: ImportDeclaration) => {
+    const modulePath = imp.getModuleSpecifierValue();
+    if (!modulePath.startsWith('.')) return;
 
-  const skipUnwrapCalls = new Set(["Grid"]); // any special functions to skip
+    const resolvedPath = path.resolve(path.dirname(dir), "src/" + modulePath + '.ts');
+    const code = fs.readFileSync(resolvedPath, 'utf-8');
+    imp.getNamedImports().forEach(named => {
+      const name = named.getName();
+      // const alias = named.getAliasNode()?.getText() || null; ?????
+      const storeRegex = new RegExp(`\\bstore\\s+${name}\\b`);
+      if (storeRegex.test(code)) {
+        reactiveVars.add(name);
+      }
+    });
+  });
 
   sourceFile.forEachDescendant((node: Node) => {
     const kind = node.getKind();
@@ -219,8 +232,15 @@ export function preprocessCode(code: string): string {
         const rootName = pae.getExpression().getText();
         const lastProp = pae.getName();
 
+        const arrayMethods = new Set([
+          "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "map", "filter", "forEach"
+        ]);
+
         // Only append .value to the final property
-        if (reactiveVars.has(rootName) || computeVars.has(rootName)) {
+
+        if (reactiveVars.has(rootName) && arrayMethods.has(lastProp)) {
+          pae.replaceWithText(`${rootName}.value.${lastProp}`);
+        } else if (reactiveVars.has(rootName) || computeVars.has(rootName)) {
           pae.replaceWithText(`${rootName}.${lastProp}.value`);
         }
         return;
