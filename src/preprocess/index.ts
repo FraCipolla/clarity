@@ -13,49 +13,6 @@ import {
 
   import { isHtmlTag } from "../runtime/dom.js";
 
-function appendValueIfReactive(node: Node, reactiveVars: Set<string>, computeVars: Set<string>) {
-  if (node.getKind() === SyntaxKind.Identifier) {
-    const name = node.getText();
-
-    if (!reactiveVars.has(name) && !computeVars.has(name)) return;
-
-    const parent = node.getParent();
-
-    // Already part of a PropertyAccessExpression that ends with .value
-    if (
-      parent &&
-      parent.getKind() === SyntaxKind.PropertyAccessExpression &&
-      parent.getText().endsWith(".value")
-    ) return;
-
-    // Write context
-    if (isWriteContext(node)) {
-      node.replaceWithText(name + ".value");
-      return;
-    }
-
-    // Console.log or read context
-    node.replaceWithText(name + ".value");
-  }
-
-  if (node.getKind() === SyntaxKind.PropertyAccessExpression) {
-    const pae = node as PropertyAccessExpression;
-    const fullText = pae.getText();
-
-    // Skip if it already ends with .value
-    if (fullText.endsWith(".value")) return;
-
-    // Only append .value at the end of chain
-    const lastProp = pae.getName();
-    const rootExpr = pae.getExpression().getText();
-
-    // If root is reactive
-    if (reactiveVars.has(rootExpr) || computeVars.has(rootExpr)) {
-      pae.replaceWithText(`${rootExpr}.${lastProp}.value`);
-    }
-  }
-}
-
 function isWriteContext(node: Node): boolean {
   const parent = node.getParent();
   if (!parent) return false;
@@ -149,6 +106,7 @@ function isWriteContext(node: Node): boolean {
 export function preprocessCode(code: string): string {
   const reactiveVars = new Set<string>();
   const computeVars = new Set<string>();
+  const storeVars = new Set<string>();
   const lines = code.split("\n");
   const outputLines: string[] = [];
 
@@ -166,10 +124,13 @@ export function preprocessCode(code: string): string {
         let rest = match[3];
         if (rest.trim().endsWith(";")) {
           const value = rest.replace(/;$/, "");
-          const isObjectLiteral = value.startsWith("{") && value.endsWith("}");
           if (type === "reactive") {
             reactiveVars.add(currentVar);
             outputLines.push(`let ${currentVar} = reactive(${value});`);
+          } else if (type === "store") {
+            computeVars.add(currentVar);
+            storeVars.add(currentVar);
+            outputLines.push(`export const ${currentVar} = reactive(${value});`);
           } else {
             computeVars.add(currentVar);
             outputLines.push(`let ${currentVar} = computed(() => ${value});`);
@@ -188,6 +149,10 @@ export function preprocessCode(code: string): string {
         if (type === "reactive") {
           reactiveVars.add(currentVar);
           outputLines.push(`let ${currentVar} = reactive(${value});`);
+        } else if (type === "store") {
+          computeVars.add(currentVar);
+          storeVars.add(currentVar);
+          outputLines.push(`export const ${currentVar} = reactive(${value});`);
         } else {
           computeVars.add(currentVar);
           outputLines.push(`let ${currentVar} = computed(() => ${value});`);
@@ -239,7 +204,6 @@ export function preprocessCode(code: string): string {
       return;
     }
 
-    // ------------------ Handle identifiers ------------------
     if (kind === SyntaxKind.Identifier) {
       const name = node.getText();
       if (!reactiveVars.has(name) && !computeVars.has(name)) return;
