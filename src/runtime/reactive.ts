@@ -13,15 +13,37 @@ export type Reactive<T> = {
   [IS_REACTIVE]: true;
 };
 
+export type DeepReactive<T> = T extends object
+  ? {
+      [K in keyof T]: DeepReactive<T[K]> & Reactive<T[K]>;
+    } & {
+      value: T;
+      [IS_REACTIVE]: true;
+    }
+  : Reactive<T>;
+
 export function isReactive(obj: any): obj is Reactive<any> {
   return !!obj && obj[IS_REACTIVE] === true;
 }
 
-export function reactive<T>(initial: T): Reactive<T> {
+function makeReactiveObject(obj: Record<string, any>): any {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = reactive(value);
+  }
+  return result;
+}
+
+export function reactive<T>(initial: T): DeepReactive<T>  {
   const listeners = new Set<Effect>();
   const notify = () => listeners.forEach(fn => fn());
+  let inner: any;
 
-  let inner: any = initial;
+  if (typeof initial === "object" && initial !== null) {
+    inner = makeReactiveObject(initial);
+  } else {
+    inner = initial;
+  }
 
   function makeProxy(obj: any): any {
     return new Proxy(obj, {
@@ -36,10 +58,6 @@ export function reactive<T>(initial: T): Reactive<T> {
       }
     });
   }
-
-  // if (typeof initial === "object" && initial !== null) {
-  //   inner = makeProxy(initial);
-  // }
 
   const wrapper: Reactive<T> = {
     value: inner,
@@ -67,29 +85,32 @@ export function reactive<T>(initial: T): Reactive<T> {
 
     set(obj, prop, val, recv) {
       if (prop === "value") {
-        obj.value = typeof val === "object" ? makeProxy(val) : val;
+        obj.value = typeof val === "object" && val !== null ? makeProxy(val) : val;
         notify();
         return true;
       }
-
       if (
         typeof prop === "string" &&
         obj.value &&
         Object.prototype.hasOwnProperty.call(obj.value, prop)
       ) {
-        obj.value[prop] = val;
+        if (typeof val === "object" && val !== null && !isReactive(val)) {
+          val = makeProxy(val);
+        }
+        obj.value[prop] = typeof val === "object" && val !== null && !isReactive(val) 
+          ? makeProxy(val) 
+          : val;
+        notify();
         return true;
       }
-
       return Reflect.set(obj, prop, val, recv);
     }
   });
 }
 
-
 export function computed<T>(fn: () => T): Reactive<T> {
-  const r = reactive<T>(fn());
-
+  const r = reactive(fn());
+  
   effect(() => {
     r.value = fn();
   });
