@@ -16,6 +16,19 @@ import { isHtmlTag } from "../runtime/dom.js";
 import * as fs from "fs";
 import * as path from "path";
 
+function flattenPlus(node: Node): Node[] {
+  if (node.getKind() === SyntaxKind.BinaryExpression) {
+    const bin = node.asKindOrThrow(SyntaxKind.BinaryExpression);
+    if (bin.getOperatorToken().getKind() === SyntaxKind.PlusToken) {
+      return [
+        ...flattenPlus(bin.getLeft()),
+        ...flattenPlus(bin.getRight()),
+      ];
+    }
+  }
+  return [node];
+}
+
 function isWriteContext(node: Node): boolean {
   const parent = node.getParent();
   if (!parent) return false;
@@ -120,18 +133,24 @@ export function preprocessCode(code: string, filePath: string): string {
   
   for (let line of lines) {
     if (!collecting) {
-      const match = line.match(/^\s*(reactive|computed|store)\s+([a-zA-Z0-9_]+)\s*=\s*(.*)$/);
+      const match = line.match(/^\s*(reactive|computed|share|persistent|session)\s+([a-zA-Z0-9_]+)\s*(?:=\s*(.*))?;?$/);
       if (match) {
         type = match[1];
         currentVar = match[2];
         let rest = match[3];
-        if (rest.trim().endsWith(";")) {
-          const value = rest.replace(/;$/, "");
+        if (rest === undefined || rest.trim().endsWith(";")) {
+          const value = rest ? rest.replace(/;$/, "") : undefined;
           if (type === "reactive") {
             reactiveVars.add(currentVar);
             outputLines.push(`const ${currentVar} = reactive(${value});`);
-          } else if (type === "store") {
+          } else if (type === "share") {
             outputLines.push(`export const ${currentVar} = reactive(${value});`);
+          } else if (type === "persistent") {
+            reactiveVars.add(currentVar);
+            outputLines.push(`const ${currentVar} = persistent("${currentVar}"${value !== undefined ? ", " + value : ""});`);
+          } else if (type === "session") {
+            reactiveVars.add(currentVar);
+            outputLines.push(`const ${currentVar} = session("${currentVar}"${value !== undefined ? ", " + value : ""});`);
           } else {
             computeVars.add(currentVar);
             outputLines.push(`const ${currentVar} = computed(() => ${value});`);
@@ -150,8 +169,14 @@ export function preprocessCode(code: string, filePath: string): string {
         if (type === "reactive") {
           reactiveVars.add(currentVar);
           outputLines.push(`const ${currentVar} = reactive(${value});`);
-        } else if (type === "store") {
+        } else if (type === "share") {
           outputLines.push(`export const ${currentVar} = reactive(${value});`);
+        } else if (type === "persistent") {
+          reactiveVars.add(currentVar);
+          outputLines.push(`const ${currentVar} = persistent("${currentVar}"${value !== undefined ? ", " + value : ""});`);
+        } else if (type === "session") {
+          reactiveVars.add(currentVar);
+          outputLines.push(`const ${currentVar} = session("${currentVar}"${value !== undefined ? ", " + value : ""});`);
         } else {
           computeVars.add(currentVar);
           outputLines.push(`const ${currentVar} = computed(() => ${value});`);
@@ -175,7 +200,7 @@ export function preprocessCode(code: string, filePath: string): string {
     imp.getNamedImports().forEach(named => {
       const name = named.getName();
       // const alias = named.getAliasNode()?.getText() || null; ?????
-      const storeRegex = new RegExp(`\\bstore\\s+${name}\\b`);
+      const storeRegex = new RegExp(`\\bshare\\s+${name}\\b`);
       if (storeRegex.test(code)) {
         reactiveVars.add(name);
       }
@@ -190,7 +215,6 @@ export function preprocessCode(code: string, filePath: string): string {
       const templateNode = node as TemplateExpression;
       const headText = templateNode.getHead().getText().slice(1, -2);
       if (headText) parts.push(JSON.stringify(headText));
-
       templateNode.getTemplateSpans().forEach(span => {
         const exprNode = span.getExpression();
 
@@ -215,6 +239,19 @@ export function preprocessCode(code: string, filePath: string): string {
 
       node.replaceWithText(`[${parts.join(", ")}]`);
       return;
+    }
+
+    if (node.getKind() === SyntaxKind.BinaryExpression) {
+      const bin = node.asKindOrThrow(SyntaxKind.BinaryExpression);
+      if (bin.getOperatorToken().getKind() === SyntaxKind.PlusToken) {
+        const parts = flattenPlus(node);
+        
+        const transformed = parts.map((part) => {
+          return part.getText();
+        });
+      
+        node.replaceWithText(`[${transformed.join(", ")}]`);
+      }
     }
 
     if (kind === SyntaxKind.Identifier) {

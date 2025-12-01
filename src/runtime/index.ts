@@ -1,4 +1,5 @@
 export * from './reactive';
+export * from './storage'
 export { ReactiveMap } from './reactive-types'
 export * from './dom';
 export type * from './types';
