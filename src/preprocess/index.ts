@@ -29,6 +29,29 @@ function flattenPlus(node: Node): Node[] {
   return [node];
 }
 
+function isInsideHtmlCall(node: Node) {
+  const parent = node.getParent();
+  if (!parent || !parent.isKind(SyntaxKind.CallExpression)) return false;
+
+  const call = parent.asKindOrThrow(SyntaxKind.CallExpression);
+  const expr = call.getExpression();
+
+  return expr.isKind(SyntaxKind.Identifier) && isHtmlTag(expr.getText());
+}
+
+function isInsideStyle(node: Node): boolean {
+  let parent = node.getParent();
+  while (parent) {
+    if (parent.isKind(SyntaxKind.PropertyAssignment)) {
+      const pa = parent.asKindOrThrow(SyntaxKind.PropertyAssignment);
+      const name = pa.getName();
+      if (name === "style") return true;
+    }
+    parent = parent.getParent();
+  }
+  return false;
+}
+
 function isWriteContext(node: Node): boolean {
   const parent = node.getParent();
   if (!parent) return false;
@@ -51,6 +74,7 @@ function isWriteContext(node: Node): boolean {
       SyntaxKind.EqualsToken,
       SyntaxKind.AsteriskToken,
       SyntaxKind.PlusToken,
+      SyntaxKind.PlusPlusToken,
       SyntaxKind.PlusEqualsToken,
       SyntaxKind.MinusEqualsToken,
       SyntaxKind.AsteriskEqualsToken,
@@ -67,9 +91,12 @@ function isWriteContext(node: Node): boolean {
       SyntaxKind.QuestionQuestionEqualsToken,
       SyntaxKind.BarBarEqualsToken,
       SyntaxKind.AmpersandAmpersandEqualsToken,
+      SyntaxKind.EqualsEqualsEqualsToken
     ]);
 
     if (bin.getLeft() === node && WRITE_OPS.has(bin.getOperatorToken().getKind())) {
+      return true;
+    } else if (bin.getRight() === node && bin.getOperatorToken().getKind() === SyntaxKind.EqualsEqualsEqualsToken) {
       return true;
     }
   }
@@ -103,6 +130,7 @@ function isWriteContext(node: Node): boolean {
       const writeOps = new Set([
         SyntaxKind.EqualsToken,
         SyntaxKind.PlusEqualsToken,
+        SyntaxKind.PlusPlusToken,
         SyntaxKind.MinusEqualsToken,
         SyntaxKind.AsteriskEqualsToken,
         SyntaxKind.SlashEqualsToken,
@@ -119,10 +147,15 @@ function isWriteContext(node: Node): boolean {
   return false;
 }
 
+const arrayMethods = new Set([
+  "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "map", "filter", "forEach", "length"
+]);
 const storeVars = new Set<{var: string, file: string}>();
 export function preprocessCode(code: string, filePath: string): string {
   if (!filePath.endsWith(".cl.ts")) return code;
   const reactiveVars = new Set<string>();
+  const reactiveArrays = new Set<string>();
+  const reactiveObjects = new Set<string>();
   const computeVars = new Set<string>();
   const lines = code.split("\n");
   const outputLines: string[] = [];
@@ -141,19 +174,25 @@ export function preprocessCode(code: string, filePath: string): string {
         if (rest === undefined || rest.trim().endsWith(";")) {
           const value = rest ? rest.replace(/;$/, "") : undefined;
           if (type === "reactive") {
-            reactiveVars.add(currentVar);
-            outputLines.push(`const ${currentVar} = reactive(${value});`);
+              const trimmed = value?.trim();
+              if (trimmed?.startsWith("[") && trimmed.endsWith("]")) {
+                reactiveArrays.add(currentVar);
+              } else if (trimmed?.startsWith("{") && trimmed.endsWith("}")) {
+                reactiveObjects.add(currentVar);
+              }
+              reactiveVars.add(currentVar);
+              outputLines.push(`let ${currentVar} = reactive(${value});`);
           } else if (type === "share") {
-            outputLines.push(`export const ${currentVar} = reactive(${value});`);
+            outputLines.push(`export let ${currentVar} = reactive(${value});`);
           } else if (type === "persistent") {
             reactiveVars.add(currentVar);
-            outputLines.push(`const ${currentVar} = persistent("${currentVar}"${value !== undefined ? ", " + value : ""});`);
+            outputLines.push(`let ${currentVar} = persistent("${currentVar}"${value !== undefined ? ", " + value : ""});`);
           } else if (type === "session") {
             reactiveVars.add(currentVar);
-            outputLines.push(`const ${currentVar} = session("${currentVar}"${value !== undefined ? ", " + value : ""});`);
+            outputLines.push(`let ${currentVar} = session("${currentVar}"${value !== undefined ? ", " + value : ""});`);
           } else {
             computeVars.add(currentVar);
-            outputLines.push(`const ${currentVar} = computed(() => ${value});`);
+            outputLines.push(`let ${currentVar} = computed(() => ${value});`);
           }
         } else {
           collecting = true;
@@ -167,6 +206,12 @@ export function preprocessCode(code: string, filePath: string): string {
       if (line.trim().endsWith(";")) {
         const value = buffer.join("\n").replace(/;$/, "");
         if (type === "reactive") {
+          const trimmed = value?.trim();
+          if (trimmed?.startsWith("[") && trimmed.endsWith("]")) {
+            reactiveArrays.add(currentVar);
+          } else if (trimmed?.startsWith("{") && trimmed.endsWith("}")) {
+            reactiveObjects.add(currentVar);
+          }
           reactiveVars.add(currentVar);
           outputLines.push(`const ${currentVar} = reactive(${value});`);
         } else if (type === "share") {
@@ -209,8 +254,53 @@ export function preprocessCode(code: string, filePath: string): string {
 
   sourceFile.forEachDescendant((node: Node) => {
     const kind = node.getKind();
+    
+    if (kind === SyntaxKind.PropertyAccessExpression) {
+      const pae = node.asKindOrThrow(SyntaxKind.PropertyAccessExpression);
+      const parent = pae.getParent();
+      if (parent && parent.isKind(SyntaxKind.BinaryExpression)) {
+        const bin = parent.asKindOrThrow(SyntaxKind.BinaryExpression);
+        const op = bin.getOperatorToken().getKind();
+
+        if (op === SyntaxKind.EqualsToken && bin.getLeft() === pae) {
+          let root: Node = pae;
+          while (root.isKind(SyntaxKind.PropertyAccessExpression)) {
+              root = root.asKindOrThrow(SyntaxKind.PropertyAccessExpression).getExpression();
+          }
+          if (root.isKind(SyntaxKind.Identifier) && reactiveVars.has(root.getText())) {  
+            const oldText = pae.getText();
+            pae.replaceWithText(oldText + ".value");
+            return;
+          }
+        }
+      }
+    }
+    
+    if (node.getKind() === SyntaxKind.ObjectLiteralExpression) {
+      const objLit = node.asKindOrThrow(SyntaxKind.ObjectLiteralExpression);
+
+      objLit.getProperties().forEach(prop => {
+        if (!prop.isKind(SyntaxKind.PropertyAssignment)) return;
+        const kind = prop.getKind();
+        
+        const assignment = prop.asKindOrThrow(SyntaxKind.PropertyAssignment);
+        const name = assignment.getName();
+
+        if (name === "style") {
+          const styleExpr = assignment.getInitializer();
+          if (!styleExpr) return;
+
+          styleExpr.forEachDescendant(desc => {
+            (desc as any)._skipReactiveValueExpansion = true;
+          });
+          (styleExpr as any)._skipReactiveValueExpansion = true;
+          return;
+        }
+      });
+    }
 
     if (kind === SyntaxKind.TemplateExpression) {
+      if (!isInsideHtmlCall(node)) return;
       const parts: string[] = [];
       const templateNode = node as TemplateExpression;
       const headText = templateNode.getHead().getText().slice(1, -2);
@@ -242,6 +332,7 @@ export function preprocessCode(code: string, filePath: string): string {
     }
 
     if (node.getKind() === SyntaxKind.BinaryExpression) {
+      if (!isInsideHtmlCall(node)) return;
       const bin = node.asKindOrThrow(SyntaxKind.BinaryExpression);
       if (bin.getOperatorToken().getKind() === SyntaxKind.PlusToken) {
         const parts = flattenPlus(node);
@@ -249,15 +340,15 @@ export function preprocessCode(code: string, filePath: string): string {
         const transformed = parts.map((part) => {
           return part.getText();
         });
-      
+
         node.replaceWithText(`[${transformed.join(", ")}]`);
       }
     }
 
     if (kind === SyntaxKind.Identifier) {
       const name = node.getText();
-      if (!reactiveVars.has(name) && !computeVars.has(name)) return;
-
+      if (!reactiveVars.has(name) && !computeVars.has(name) && !reactiveObjects.has(name)) return;
+      if (isInsideStyle(node)) return; 
       // Check if it is part of a property access (obj.x)
       const parent = node.getParent();
       if (
@@ -268,18 +359,42 @@ export function preprocessCode(code: string, filePath: string): string {
         const pae = parent as PropertyAccessExpression;
         const rootName = pae.getExpression().getText();
         const lastProp = pae.getName();
-
-        const arrayMethods = new Set([
-          "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "map", "filter", "forEach"
-        ]);
-
-        // Only append .value to the final property
-
+        console.log(lastProp)
         if (reactiveVars.has(rootName) && arrayMethods.has(lastProp)) {
           pae.replaceWithText(`${rootName}.value.${lastProp}`);
-        } else if (reactiveVars.has(rootName) || computeVars.has(rootName)) {
+          return;
+        } else if (
+          reactiveVars.has(rootName) &&
+          reactiveObjects.has(rootName)
+        ) {
           pae.replaceWithText(`${rootName}.${lastProp}.value`);
+          return;
         }
+      }
+
+      if (
+        reactiveVars.has(name) &&
+        reactiveArrays.has(name)
+      ) {
+        const parent = node.getParent();
+      
+        // Skip if it's a variable declaration
+        if (parent?.getKind() === SyntaxKind.VariableDeclaration) return;
+      
+        // Skip if it's the "root" array in For() or IfElse()
+        if (parent?.getKind() === SyntaxKind.CallExpression) {
+          const call = parent.asKindOrThrow(SyntaxKind.CallExpression);
+          const funcName = call.getExpression().getText();
+          if (["For", "IfElse"].includes(funcName) && call.getArguments()[0] === node) return;
+        }
+      
+        // Skip if it's already a property access ending with .value
+        if (
+          parent?.isKind(SyntaxKind.PropertyAccessExpression) &&
+          parent.getName() === "value"
+        ) return;
+
+        node.replaceWithText(name + ".value");
         return;
       }
 

@@ -1,3 +1,5 @@
+import { unwrap } from './dom.js'
+
 type Effect = () => void;
 let currentEffect: Effect | null = null;
 
@@ -26,11 +28,24 @@ export function isReactive(obj: any): obj is Reactive<any> {
   return !!obj && obj[IS_REACTIVE] === true;
 }
 
-function makeReactiveObject(obj: Record<string, any>): any {
+function makeReactiveObject(obj: Record<string, any>): DeepReactive<any> {
+  const listeners = new Set<Effect>();
+  const notify = () => listeners.forEach(fn => fn());
+
   const result: any = {};
-  for (const [key, value] of Object.entries(obj)) {
-    result[key] = reactive(value);
+
+  for (let [key, value] of Object.entries(obj)) {
+    if (isReactive(value)) {
+      result[key] = value;
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      result[key] = reactive(value)
+    } else if (Array.isArray(value)) {
+      result[key] = reactive(value);
+    } else {
+      result[key] = reactive(value);
+    }
   }
+
   return result;
 }
 
@@ -38,18 +53,36 @@ function makeReactiveArray<T>(arr: T[]): Reactive<T[]> {
   const listeners = new Set<Effect>();
   const notify = () => listeners.forEach(fn => fn());
 
-  const reactiveElements = arr.map(v => (typeof v === "object" ? reactive(v) : v));
+  // Only wrap objects that are not already reactive
+  const wrapElement = (obj: any) => {
+    for (let [k, v] of Object.entries(obj)) {
+      if (isReactive(v)) obj[k] = unwrap(v);
+    }
+    if (Array.isArray(obj)) return isReactive(obj) ? obj : makeReactiveArray(obj).value;
+    if (typeof obj === "object" && obj !== null) return isReactive(obj) ? obj : reactive(obj);
+    return obj;
+  };
+
+  const reactiveElements = arr.map(wrapElement);
 
   const proxy = new Proxy(reactiveElements, {
     get(target, prop, receiver) {
       if (currentEffect) listeners.add(currentEffect);
-
       const value = Reflect.get(target, prop, receiver);
 
-      if (["push","pop","shift","unshift","splice","sort","reverse"].includes(prop as string)) {
+      // Mutating array methods
+      if (["push", "unshift", "splice"].includes(prop as string)) {
         return (...args: any[]) => {
-          const wrappedArgs = args.map(a => (typeof a === "object" ? reactive(a) : a));
+          const wrappedArgs = args.map(wrapElement);
           const res = (value as Function).apply(target, wrappedArgs);
+          notify();
+          return res;
+        };
+      }
+
+      if (["pop", "shift", "sort", "reverse"].includes(prop as string)) {
+        return (...args: any[]) => {
+          const res = (value as Function).apply(target, args);
           notify();
           return res;
         };
@@ -59,10 +92,8 @@ function makeReactiveArray<T>(arr: T[]): Reactive<T[]> {
     },
 
     set(target, prop, value, receiver) {
-      if (typeof value === "object" && value !== null && !isReactive(value)) {
-        value = reactive(value);
-      }
-      const res = Reflect.set(target, prop, value, receiver);
+      const wrappedValue = wrapElement(value);
+      const res = Reflect.set(target, prop, wrappedValue, receiver);
       notify();
       return res;
     }
@@ -72,6 +103,8 @@ function makeReactiveArray<T>(arr: T[]): Reactive<T[]> {
 }
 
 export function reactive<T>(initial: T): DeepReactive<T>  {
+  if (isReactive(initial)) return initial as DeepReactive<T>;
+  
   const listeners = new Set<Effect>();
   const notify = () => listeners.forEach(fn => fn());
   let inner: any;
@@ -88,6 +121,7 @@ export function reactive<T>(initial: T): DeepReactive<T>  {
     return new Proxy(obj, {
       get(target, prop, recv) {
         if (currentEffect) listeners.add(currentEffect);
+        
         return Reflect.get(target, prop, recv);
       },
       set(target, prop, val, recv) {
@@ -123,26 +157,15 @@ export function reactive<T>(initial: T): DeepReactive<T>  {
     },
 
     set(obj, prop, val, recv) {
-      if (prop === "value") {
-        obj.value = typeof val === "object" && val !== null ? makeProxy(val) : val;
-        notify();
-        return true;
-      }
-      if (
-        typeof prop === "string" &&
-        obj.value &&
-        Object.prototype.hasOwnProperty.call(obj.value, prop)
-      ) {
-        if (typeof val === "object" && val !== null && !isReactive(val)) {
-          val = makeProxy(val);
-        }
-        obj.value[prop] = typeof val === "object" && val !== null && !isReactive(val) 
-          ? makeProxy(val) 
-          : val;
-        notify();
-        return true;
-      }
-      return Reflect.set(obj, prop, val, recv);
+      if (typeof val === "object" && val !== null && !isReactive(val)) {
+        val = makeProxy(val);
+      }    
+      if (prop === "value") obj.value = val;
+      else if (obj.value && typeof obj.value === "object") obj.value[prop] = val;
+      else return Reflect.set(obj, prop, val, recv);
+    
+      notify();
+      return true;
     }
   });
 }
