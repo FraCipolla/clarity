@@ -95,6 +95,11 @@ export function createElement(
         } else {
           el.value = String(value ?? "");
         }
+      } else if ((key === "disabled") && (el instanceof HTMLButtonElement)) {
+        effect(() => {
+          const isDisabled = typeof val === "function" ? (val as Function)() : val;
+          el.disabled = isReactive(isDisabled) ? isDisabled.value : isDisabled;
+        })
       } else {
         el.setAttribute(key, String(unwrap(val)));
       }
@@ -410,3 +415,65 @@ export function IfElse(
 
   return container;
 }
+
+export type DynamicSource =
+  | Node
+  | string
+  | number
+  | null
+  | undefined
+  | boolean
+  | (() => DynamicSource)
+  | Reactive<any>;
+
+export function dynamic(source: DynamicSource): Node {
+  let currentNode: Node;
+  
+  const anchor = document.createComment("dynamic-anchor");
+
+  const toNode = (value: DynamicSource): Node => {
+    if (value instanceof Node) return value;
+
+    if (value == null || value === false) {
+      return document.createComment("dynamic-empty");
+    }
+
+    if (isReactive(value)) {
+      return document.createTextNode(String(value.value));
+    }
+
+    if (typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean") {
+      return document.createTextNode(String(value));
+    }
+    return document.createTextNode("");
+  };
+
+  const compute = () => {
+    const value =
+      typeof source === "function"
+        ? (source as () => DynamicSource)()
+        : isReactive(source)
+        ? source.value
+        : source;
+
+    const newNode = toNode(value);
+
+    if (currentNode && currentNode.parentNode) {
+      currentNode.parentNode.replaceChild(newNode, currentNode);
+    }
+
+    currentNode = newNode;
+  };
+
+  currentNode = anchor;
+  compute();
+
+  if (typeof source === "function" || isReactive(source)) {
+    effect(compute);
+  }
+
+  return currentNode;
+}
+

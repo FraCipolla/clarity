@@ -13,6 +13,9 @@ export const IS_REACTIVE = Symbol("isReactive");
 export type Reactive<T> = {
   value: T;
   [IS_REACTIVE]: true;
+  _isComputed?: true;
+  [key: string]: any
+
 };
 
 export type DeepReactive<T> = T extends object
@@ -139,17 +142,16 @@ export function reactive<T>(initial: T): DeepReactive<T>  {
 
   return new Proxy(wrapper as any, {
     get(obj, prop, recv) {
-      if (prop === "value") {
-        if (currentEffect) listeners.add(currentEffect);
-        return obj.value;
+      if (currentEffect) listeners.add(currentEffect);
+      
+      if (prop === Symbol.toPrimitive) {
+        return () => obj.value; 
       }
-
       if (
         typeof prop === "string" &&
         obj.value &&
         Object.prototype.hasOwnProperty.call(obj.value, prop)
       ) {
-        if (currentEffect) listeners.add(currentEffect);
         return obj.value[prop];
       }
 
