@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import { preprocessCode } from "./preprocess/index.js";
 import { processRoutes } from "./preprocess/preprocess-routes.js";
-import { isHtmlTag } from "./runtime/dom.js";
+import { preprocessCodeSignal } from "./preprocess/signal.js";
 
 export interface ClarityPluginOptions {
   debug?: boolean;
@@ -27,7 +27,7 @@ export default function ClarityPlugin(options: ClarityPluginOptions = {}): Plugi
       const ext = id.endsWith(".cl.ts");
       if (id.includes("node_modules")) return null;
       if (ext) {
-        const transformed = preprocessCode(code, id);
+        const transformed = preprocessCodeSignal(code, id);
         const root = process.cwd();
         const rel = path.relative(root, id);
         const out = path.resolve(root, ".preprocessed", rel);

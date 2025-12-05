@@ -1,5 +1,4 @@
-import { isReactive, effect } from "./reactive.js";
-import type { DeepReactive, Reactive } from "./reactive.js";
+import { effect, computed, isReactive } from "./signal.js";
 
 export type Child =
   | string
@@ -9,41 +8,21 @@ export type Child =
   | undefined
   | Node
   | Child[]
-  | { value: any }; // unified reactive
+  | (() => Child); // Signals and Computed values are passed as functions
 
 export type Attrs = Record<string, any>;
 
-export function unwrap<T>(value: T): any {
-  if (isReactive(value)) return unwrap(value.value);
-  if (Array.isArray(value)) return value.map(unwrap);
-  if (typeof value === "object" && value !== null) {
-    const obj: any = {};
-    for (const key in value) obj[key] = unwrap((value as any)[key]);
-    return obj;
+function valueToString(val: any): string {
+  if (val == null) return "";
+  if (typeof val === "string" || typeof val === "number" || typeof val === "boolean")
+    return String(val);
+  if (Array.isArray(val)) return val.map(valueToString).join(", ");
+  if (typeof val === "object") {
+    return Object.entries(val)
+      .map(([k, v]) => `${k}: ${valueToString(v)}`)
+      .join("; ");
   }
-  return value;
-}
-
-function unwrapDeep(val: any): any {
-  if (isReactive(val)) return unwrapDeep(val.value);
-  if (Array.isArray(val)) return val.map(unwrapDeep);
-  if (val && typeof val === "object") {
-    const result: Record<string, any> = {};
-    for (const [k, v] of Object.entries(val)) {
-      result[k] = unwrapDeep(v);
-    }
-    return result;
-  }
-  return val;
-}
-
-function hasReactive(value: any): boolean {
-  if (isReactive(value)) return true;
-  if (Array.isArray(value)) return value.some(hasReactive);
-  if (value && typeof value === "object") {
-    return Object.values(value).some(hasReactive);
-  }
-  return false;
+  return String(val);
 }
 
 export function createElement(
@@ -51,15 +30,16 @@ export function createElement(
   attrsOrChild: Attrs | Child = {},
   ...children: Child[]
 ): HTMLElement {
+  const el = document.createElement(tagName);
   let attrs: Attrs = {};
   let actualChildren: Child[] = [];
 
-  // Detect if first argument is attrs or a child
   if (
     attrsOrChild &&
     typeof attrsOrChild === "object" &&
     !Array.isArray(attrsOrChild) &&
-    !("nodeType" in attrsOrChild)
+    !(attrsOrChild instanceof Node) &&
+    !(typeof attrsOrChild === 'function')
   ) {
     attrs = attrsOrChild as Attrs;
     actualChildren = children;
@@ -67,88 +47,86 @@ export function createElement(
     actualChildren = [attrsOrChild as Child, ...children];
   }
 
-  let el = document.createElement(tagName);
   for (const [key, value] of Object.entries(attrs)) {
     if (key.startsWith("on") && typeof value === "function") {
       el.addEventListener(key.slice(2).toLowerCase(), value);
       continue;
     }
-    const isStyleFunction = key === "style" && typeof value === "function";
-    const isReactiveAttr = isReactive(value) || (typeof value === "function" && (value as any)._isComputed) || isStyleFunction;
+
+    const isDynamic = typeof value === "function";
 
     const apply = () => {
-      const val = typeof value === "function" && (value as any)._isComputed ? value() : isReactive(value) ? value.value : value;
+      const val = isDynamic ? (value as () => any)() : value;
 
-      if (key === "style") {
+      if (key === "style" && val && typeof val === "object") {
         effect(() => {
-          const styleObj = typeof val === "function" ? (val as Function)() : val;
-          for (const [prop, raw] of Object.entries(styleObj || {})) {
+          for (const [prop, v] of Object.entries(val)) {
+            const cssVal = typeof v === 'function' ? v() : v;
             const cssProp = prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
-            const rawVal = isReactive(raw) ? raw.value : raw;
-            el.style.setProperty(cssProp, String(rawVal));
+            el.style.setProperty(cssProp, String(cssVal));
           }
-        });
-      } else if ((key === "value") && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
-        if (isReactive(value)) {
-          el.oninput = (e: Event) => value.value = (e.target as HTMLInputElement).value;
-          el.value = unwrap(value.value);
-        } else {
-          el.value = String(value ?? "");
-        }
-      } else if ((key === "disabled") && (el instanceof HTMLButtonElement)) {
-        effect(() => {
-          const isDisabled = typeof val === "function" ? (val as Function)() : val;
-          el.disabled = isReactive(isDisabled) ? isDisabled.value : isDisabled;
         })
+      } else if ((key === "value") && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+        el.value = String(val ?? "");
+      } else if ((key === "disabled") && el instanceof HTMLButtonElement) {
+        el.disabled = Boolean(val);
       } else {
-        el.setAttribute(key, String(unwrap(val)));
+        if (isReactive(val)) {
+          el.setAttribute(key, val() == null ? "" : String(val()));
+        } else {
+          el.setAttribute(key, val == null ? "" : String(val));
+        }
       }
     };
 
-    if (isReactiveAttr || key === "style" && typeof value === "function") {
+    if (isDynamic) {
       effect(apply);
     } else {
       apply();
     }
   }
 
-
   function append(child: Child) {
     if (child == null || child === false) return;
-    
-    // Strings/numbers
-    if (typeof child === "string" || typeof child === "number") {
+
+    if (isReactive(child)) {
+      const unwrap = child();
+      if (Array.isArray(unwrap)) {
+        unwrap.forEach(append);
+        return
+      }
+      const textNode = document.createTextNode(String(unwrap));
+
+      effect(() => {
+        textNode.nodeValue = String(child());
+      });
+
+      el.appendChild(textNode);
+      return;
+    }
+
+    if (typeof child === "string" || typeof child === "number" || typeof child === "boolean") {
       el.appendChild(document.createTextNode(String(child)));
       return;
     }
-    // DOM Node
+
     if (child instanceof Node) {
       el.appendChild(child);
       return;
     }
-    // Arrays
+
     if (Array.isArray(child)) {
       child.forEach(append);
       return;
     }
-    // REACTIVE CHILD
-    if (isReactive(child)) {
+
+    if (typeof child === "function") {
       const textNode = document.createTextNode("");
       effect(() => {
-        const val = unwrap(child);
-        textNode.nodeValue = (typeof val === "object" && val !== null)
-          ? Object.entries(val).map(([k, v]) => `${k}: ${v}`).join(", ")
-          : String(val);
+        const val = child();
+        textNode.nodeValue = valueToString(val);
       });
       el.appendChild(textNode);
-      return;
-    }
-    // Object
-    if (typeof child === "object") {
-      const text = Object.entries(unwrapDeep(child))
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(", ");
-      el.appendChild(document.createTextNode(text));
       return;
     }
 
@@ -156,11 +134,68 @@ export function createElement(
   }
 
   actualChildren.forEach(append);
-
   return el;
 }
 
-// Tag helpers
+export function If(condition: any, render: () => Node) {
+  const placeholder = document.createTextNode("");
+  let currentNode: Node | null = null;
+  const isDynamic = typeof condition === "function";
+
+  const run = () => {
+    (currentNode as ChildNode)?.remove();
+    const cond = isDynamic ? condition() : condition;
+    if (cond) {
+      currentNode = render();
+      placeholder.parentNode?.insertBefore(currentNode, placeholder.nextSibling);
+    } else {
+      currentNode = null;
+    }
+  };
+
+  if (isDynamic) effect(run);
+  else run();
+
+  return placeholder;
+}
+
+export function IfElse(condition: any, renderThen: () => Node, renderElse: () => Node) {
+  const container = document.createElement("span");
+  let currentNode: Node | null = null;
+  const isDynamic = typeof condition === "function";
+
+  const run = () => {
+    if (currentNode && container.contains(currentNode)) container.removeChild(currentNode);
+    const cond = isDynamic ? condition() : condition;
+    currentNode = cond ? renderThen() : renderElse();
+    container.appendChild(currentNode);
+  };
+
+  if (isDynamic) effect(run);
+  else run();
+
+  return container;
+}
+
+export function For<T>(list: T[] | (() => T[]), render: (item: T) => Child) {
+  const container = document.createElement("div");
+  const isDynamic = typeof list === "function";
+
+  const update = () => {
+    const arr = isDynamic ? (list as () => T[])() : (list as T[]);
+    container.innerHTML = "";
+    for (const item of arr) {
+      const node = render(item);
+      container.appendChild(node instanceof Node ? node : document.createTextNode(String(node)));
+    }
+  };
+
+  if (isDynamic) effect(update);
+  else update();
+
+  return container;
+}
+
 export const a = (attrsOrChild?: Attrs | Child, ...children: Child[]) => createElement("a", attrsOrChild, ...children);
 export const abbr = (attrsOrChild?: Attrs | Child, ...children: Child[]) => createElement("abbr", attrsOrChild, ...children);
 export const address = (attrsOrChild?: Attrs | Child, ...children: Child[]) => createElement("address", attrsOrChild, ...children);
@@ -279,201 +314,3 @@ const tags = [
 export const isHtmlTag = ((s: string) => {
   return tags.includes(s);
 })
-
-export function If(condition: Reactive<boolean>, render: () => Node) {
-  const placeholder = document.createTextNode("");
-  let currentNode: Node | null = null;
-
-  effect(() => {
-    // Remove previous node
-    if (currentNode) {
-      (currentNode as ChildNode).remove();
-      currentNode = null;
-    }
-
-    if (condition.value) {
-      currentNode = render();
-      placeholder.parentNode?.insertBefore(currentNode, placeholder.nextSibling);
-    }
-  });
-
-  return placeholder;
-}
-
-export function each<T>(list: T[] | Reactive<T[]>, ) {
-
-}
-
-export function For<T>(
-  list: T[] | Reactive<DeepReactive<T>[]>,
-  render: (item: T) => ChildNode,
-  keyFn?: (item: T) => any
-) {
-  const container = document.createElement("div");
-  const nodes = new Map<any, ChildNode>(); // key: array element, value: DOM node
-
-  function mountItem(raw: any, beforeNode?: Node | null) {
-    const item = unwrap(raw) as T;
-
-    // Wrap render in an effect to track reactive variables inside
-    let dom: ChildNode;
-    effect(() => {
-      const rendered = render(item);
-
-      if (!nodes.has(raw)) {
-        dom = rendered;
-        nodes.set(raw, dom);
-        if (beforeNode && beforeNode.parentNode === container) {
-          container.insertBefore(dom, beforeNode);
-        } else {
-          container.appendChild(dom);
-        }
-      } else {
-        dom = nodes.get(raw)!;
-        // Replace existing DOM if the render returns a different node
-        if (rendered !== dom) {
-          if (dom.parentNode) dom.parentNode.replaceChild(rendered, dom);
-          nodes.set(raw, rendered);
-          dom = rendered;
-        }
-      }
-    });
-  }
-
-  const updateArray = () => {
-    const arr = isReactive(list) ? list.value : list;
-    const orderedKeys: any[] = [];
-
-    for (const raw of arr) orderedKeys.push(raw);
-
-    // Remove deleted nodes
-    for (const [key, node] of Array.from(nodes.entries())) {
-      if (!orderedKeys.includes(key)) {
-        node.parentNode?.removeChild(node);
-        nodes.delete(key);
-      }
-    }
-
-    // Mount or reorder nodes
-    let nextSibling: Node | null = null;
-    for (let i = orderedKeys.length - 1; i >= 0; i--) {
-      const key = orderedKeys[i];
-      const existing = nodes.get(key);
-      if (!existing) {
-        mountItem(key, nextSibling);
-      } else {
-        if (existing.nextSibling !== nextSibling) {
-          container.insertBefore(existing, nextSibling);
-        }
-      }
-      nextSibling = nodes.get(key) || null;
-    }
-  };
-
-  if (isReactive(list)) {
-    effect(updateArray);
-  } else {
-    for (const item of list) {
-      mountItem(item);
-    }
-  }
-
-  return container;
-}
-
-
-
-export function IfElse(
-  condition: Reactive<boolean> | boolean,
-  renderThen: () => Node,
-  renderElse: () => Node
-) {
-  const container = document.createElement("span");
-  let currentNode: Node | null = null;
-
-  const run = () => {
-    if (currentNode && currentNode.parentNode === container) {
-      container.removeChild(currentNode);
-      currentNode = null;
-    }
-
-    const cond = isReactive(condition) ? (condition as Reactive<boolean>).value : (condition as boolean);
-    if (cond) {
-      currentNode = renderThen();
-    } else {
-      currentNode = renderElse();
-    }
-
-    if (currentNode) container.appendChild(currentNode);
-  };
-
-  if (isReactive(condition)) {
-    effect(run);
-  } else {
-    run();
-  }
-
-  return container;
-}
-
-export type DynamicSource =
-  | Node
-  | string
-  | number
-  | null
-  | undefined
-  | boolean
-  | (() => DynamicSource)
-  | Reactive<any>;
-
-export function dynamic(source: DynamicSource): Node {
-  let currentNode: Node;
-  
-  const anchor = document.createComment("dynamic-anchor");
-
-  const toNode = (value: DynamicSource): Node => {
-    if (value instanceof Node) return value;
-
-    if (value == null || value === false) {
-      return document.createComment("dynamic-empty");
-    }
-
-    if (isReactive(value)) {
-      return document.createTextNode(String(value.value));
-    }
-
-    if (typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean") {
-      return document.createTextNode(String(value));
-    }
-    return document.createTextNode("");
-  };
-
-  const compute = () => {
-    const value =
-      typeof source === "function"
-        ? (source as () => DynamicSource)()
-        : isReactive(source)
-        ? source.value
-        : source;
-
-    const newNode = toNode(value);
-
-    if (currentNode && currentNode.parentNode) {
-      currentNode.parentNode.replaceChild(newNode, currentNode);
-    }
-
-    currentNode = newNode;
-  };
-
-  currentNode = anchor;
-  compute();
-
-  if (typeof source === "function" || isReactive(source)) {
-    effect(compute);
-  }
-
-  return currentNode;
-}
-

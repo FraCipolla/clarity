@@ -1,5 +1,3 @@
-import { unwrap } from './dom.js'
-
 type Effect = () => void;
 let currentEffect: Effect | null = null;
 
@@ -17,6 +15,17 @@ export type Reactive<T> = {
   [key: string]: any
 
 };
+
+export function unwrap<T>(value: T): any {
+  if (isReactive(value)) return unwrap(value.value);
+  if (Array.isArray(value)) return value.map(unwrap);
+  if (typeof value === "object" && value !== null) {
+    const obj: any = {};
+    for (const key in value) obj[key] = unwrap((value as any)[key]);
+    return obj;
+  }
+  return value;
+}
 
 export type DeepReactive<T> = T extends object
   ? {
